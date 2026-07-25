@@ -1,0 +1,12 @@
+# Go build artifacts
+/ast-digger
+/ast-digger.exe
+/bin/
+
+# Project-specific cache (SQLite DB, feedback) — shared between Go and
+# Python implementations (see doc/adr/0006-share-cache-db-and-feedback-log-with-python.md)
+.workspace_cache/
+
+# OS specific files
+.DS_Store
+Thumbs.db

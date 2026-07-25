@@ -1,0 +1,4 @@
+package references
+
+func Noop() {
+}
