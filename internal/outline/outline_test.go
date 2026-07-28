@@ -128,6 +128,7 @@ func TestOutliner_GenerateSkeleton_MultiLanguage(t *testing.T) {
 		{name: "java", filePath: "../../testdata/java/sample.java", parser: parser.NewJavaParser()},
 		{name: "javascript", filePath: "../../testdata/javascript/sample.js", parser: parser.NewJavaScriptParser()},
 		{name: "rust", filePath: "../../testdata/rust/sample.rs", parser: parser.NewRustParser()},
+		{name: "markdown", filePath: "../../testdata/markdown/sample.md", parser: parser.NewMarkdownParser()},
 	}
 
 	o := NewOutliner()
@@ -1549,3 +1550,32 @@ func TestOutliner_ExtractSymbolWithDependencies_EdgeCases(t *testing.T) {
 		}
 	})
 }
+
+func TestOutliner_BuildDirectoryTree_Markdown(t *testing.T) {
+	tmp := t.TempDir()
+	chdirTest(t, tmp)
+
+	filePath := filepath.Join(tmp, "doc.md")
+	writeFile(t, filePath, "# Header 1\n\nSome text\n\n## Subheader\n")
+
+	o := NewOutliner()
+	tree, err := o.BuildDirectoryTree(".", true, 50)
+	if err != nil {
+		t.Fatalf("BuildDirectoryTree failed: %v", err)
+	}
+	if !strings.Contains(tree, "doc.md") {
+		t.Errorf("expected tree to contain doc.md, got:\n%s", tree)
+	}
+}
+
+func TestOutliner_FindReferences_Markdown(t *testing.T) {
+	o := NewOutliner()
+	got, err := o.FindReferences("../../testdata/markdown/references", "SPECS/design.md#architecture")
+	if err != nil {
+		t.Fatalf("FindReferences returned unexpected error: %v", err)
+	}
+	if len(got) != 2 {
+		t.Fatalf("expected 2 references, got %d: %+v", len(got), got)
+	}
+}
+

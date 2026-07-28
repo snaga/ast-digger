@@ -104,6 +104,7 @@ func TestRootHelpCmd_ContainsSupportedLanguages(t *testing.T) {
 		"Java (.java)",
 		"JavaScript (.js, .jsx)",
 		"Rust (.rs)",
+		"Markdown (.md, .markdown)",
 	}
 
 	for _, want := range wantSubstrings {
@@ -270,11 +271,123 @@ func TestOutlineCmd_FileNotFound_JSON(t *testing.T) {
 // extToLang/getParser through the CLI, using the fixtures task 18-21 built
 // for internal/parser's own JavaParser/JavaScriptParser tests.
 const (
-	javaSampleFile = "../../testdata/java/sample.java"
-	jsSampleFile   = "../../testdata/javascript/sample.js"
-	jsxSampleFile  = "../../testdata/javascript/sample.jsx"
-	rustSampleFile = "../../testdata/rust/sample.rs"
+	javaSampleFile     = "../../testdata/java/sample.java"
+	jsSampleFile       = "../../testdata/javascript/sample.js"
+	jsxSampleFile      = "../../testdata/javascript/sample.jsx"
+	rustSampleFile     = "../../testdata/rust/sample.rs"
+	markdownSampleFile = "../../testdata/markdown/sample.md"
 )
+
+func TestOutlineCmd_Markdown_Text(t *testing.T) {
+	res := runCLI(t, "outline", markdownSampleFile)
+	if res.ExitCode != apperr.ExitOK {
+		t.Fatalf("ExitCode = %d, want 0; stderr=%q", res.ExitCode, res.Stderr)
+	}
+	if !strings.Contains(res.Stdout, "## Section 1") {
+		t.Errorf("stdout does not contain '## Section 1':\n%s", res.Stdout)
+	}
+}
+
+func TestOutlineCmd_Markdown_JSON(t *testing.T) {
+	res := runCLI(t, "outline", markdownSampleFile, "--json")
+	if res.ExitCode != apperr.ExitOK {
+		t.Fatalf("ExitCode = %d, want 0; stderr=%q", res.ExitCode, res.Stderr)
+	}
+	var symbols []map[string]any
+	if err := json.Unmarshal([]byte(res.Stdout), &symbols); err != nil {
+		t.Fatalf("stdout is not valid JSON array: %v\nstdout=%s", err, res.Stdout)
+	}
+	found := false
+	for _, s := range symbols {
+		if s["name"] == "Section 1" {
+			found = true
+			break
+		}
+	}
+	if !found {
+		t.Errorf("expected symbol 'Section 1' in JSON output: %s", res.Stdout)
+	}
+}
+
+func TestSymbolCmd_Markdown_Text(t *testing.T) {
+	res := runCLI(t, "symbol", markdownSampleFile, "Section 1")
+	if res.ExitCode != apperr.ExitOK {
+		t.Fatalf("ExitCode = %d, want 0; stderr=%q", res.ExitCode, res.Stderr)
+	}
+	if !strings.Contains(res.Stdout, "Section 1 content.") {
+		t.Errorf("stdout does not contain 'Section 1 content.':\n%s", res.Stdout)
+	}
+}
+
+func TestSymbolCmd_Markdown_JSON(t *testing.T) {
+	res := runCLI(t, "symbol", markdownSampleFile, "Section 1", "--json")
+	if res.ExitCode != apperr.ExitOK {
+		t.Fatalf("ExitCode = %d, want 0; stderr=%q", res.ExitCode, res.Stderr)
+	}
+	var payload map[string]any
+	if err := json.Unmarshal([]byte(res.Stdout), &payload); err != nil {
+		t.Fatalf("stdout is not valid JSON: %v\nstdout=%s", err, res.Stdout)
+	}
+	if payload["name"] != "Section 1" {
+		t.Errorf("payload name = %v, want 'Section 1'", payload["name"])
+	}
+}
+
+func TestLocateCmd_Markdown(t *testing.T) {
+	res := runCLI(t, "locate", markdownSampleFile, "Section 1")
+	if res.ExitCode != apperr.ExitOK {
+		t.Fatalf("ExitCode = %d, want 0; stderr=%q", res.ExitCode, res.Stderr)
+	}
+	if !strings.Contains(res.Stdout, "sample.md:") {
+		t.Errorf("stdout does not contain 'sample.md:':\n%s", res.Stdout)
+	}
+}
+
+func TestResolveImportCmd_Markdown(t *testing.T) {
+	orig, _ := os.Getwd()
+	absProjDir, _ := filepath.Abs("../../testdata/markdown/importproj")
+	_ = os.Chdir(absProjDir)
+	t.Cleanup(func() { _ = os.Chdir(orig) })
+
+	res := runCLI(t, "resolve-import", "main.md", "#section-2")
+	if res.ExitCode != apperr.ExitOK {
+		t.Fatalf("ExitCode = %d, want 0; stderr=%q", res.ExitCode, res.Stderr)
+	}
+	if !strings.Contains(res.Stdout, "main.md:53") {
+		t.Errorf("stdout = %q, want it to contain main.md:53", res.Stdout)
+	}
+}
+
+func TestReferencesCmd_Markdown(t *testing.T) {
+	orig, _ := os.Getwd()
+	absProjDir, _ := filepath.Abs("../../testdata/markdown/references")
+	_ = os.Chdir(absProjDir)
+	t.Cleanup(func() { _ = os.Chdir(orig) })
+
+	res := runCLI(t, "references", "SPECS/design.md#architecture")
+	if res.ExitCode != apperr.ExitOK {
+		t.Fatalf("ExitCode = %d, want 0; stderr=%q", res.ExitCode, res.Stderr)
+	}
+	if !strings.Contains(res.Stdout, "ref.md:") {
+		t.Errorf("stdout does not contain ref.md reference:\n%s", res.Stdout)
+	}
+}
+
+func TestDirectoryCmd_Markdown(t *testing.T) {
+	tmp := t.TempDir()
+	orig, _ := os.Getwd()
+	_ = os.Chdir(tmp)
+	t.Cleanup(func() { _ = os.Chdir(orig) })
+
+	writeFile(t, filepath.Join(tmp, "doc.md"), "# Header 1\n\nSome text\n")
+	res := runCLI(t, "directory", ".")
+	if res.ExitCode != apperr.ExitOK {
+		t.Fatalf("ExitCode = %d, want 0; stderr=%q", res.ExitCode, res.Stderr)
+	}
+	if !strings.Contains(res.Stdout, "doc.md") {
+		t.Errorf("stdout does not contain doc.md:\n%s", res.Stdout)
+	}
+}
 
 func TestOutlineCmd_Rust_Text(t *testing.T) {
 	res := runCLI(t, "outline", rustSampleFile)

@@ -48,7 +48,8 @@ Supported languages and extensions:
   - Golang (.go)
   - Java (.java)
   - JavaScript (.js, .jsx)
-  - Rust (.rs)`,
+  - Rust (.rs)
+  - Markdown (.md, .markdown)`,
 		Version:           version,
 		SilenceUsage:      true,
 		SilenceErrors:     true,

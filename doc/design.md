@@ -36,6 +36,8 @@
 | 運用品質 | F-12 | 単一バイナリ配布 | CGO依存を許容し、各プラットフォーム上のネイティブビルドで生成する。 | 要件 I-1 |
 | バックログ機能 | F-13 | 対応言語・拡張子一覧提示 (将来機能) | `agent-context` JSONメタデータに `supported_languages` / `supported_extensions` を追加。 | 要件 J-1 |
 | バックログ機能 | F-14 | 依存コード自動追跡 (将来機能) | `symbol` に `--follow-imports` オプションを追加し、依存先コード本文を一括抽出・返却する。 | 要件 J-2 |
+| ドキュメント解析 | F-15 | Markdownドキュメント構造解析 | `tree-sitter-markdown` を用いて見出し階層（H1〜H6）とコードブロック（Mermaid等）をパースし、スケルトン・ピンポイント抽出・セクション特定を行う。 | 要件 K-1, K-2, K-3 |
+
 
 ---
 
@@ -134,11 +136,15 @@ graph TD
         C --> C4["GolangParser: parser/golang.go"]
         C --> C5["JavaParser: parser/java.go"]
         C --> C6["JavaScriptParser: parser/javascript.go"]
+        C --> C7["RustParser: parser/rust.go"]
+        C --> C8["MarkdownParser: parser/markdown.go"]
         C2 --> D2["go-tree-sitter + tree-sitter-python"]
         C3 --> D3["go-tree-sitter + tree-sitter-typescript"]
         C4 --> D4["go-tree-sitter + tree-sitter-go"]
         C5 --> D5["go-tree-sitter + tree-sitter-java"]
         C6 --> D6["go-tree-sitter + tree-sitter-javascript"]
+        C7 --> D7["go-tree-sitter + tree-sitter-rust"]
+        C8 --> D8["go-tree-sitter + tree-sitter-markdown"]
     end
     subgraph cache["Cache Layer (internal/db, Pure Go)"]
         B --> E["SymbolDatabase: db/db.go"]
@@ -150,8 +156,11 @@ graph TD
         C4 --> G4["Target Go Files"]
         C5 --> G5["Target Java Files"]
         C6 --> G6["Target JS/JSX Files"]
+        C7 --> G7["Target Rust Files"]
+        C8 --> G8["Target Markdown Files"]
     end
 ```
+
 
 - **CLI Runner**: cobraでサブコマンド・フラグを定義し、パース結果を `Outliner` に橋渡しする。
 - **Outliner**: スケルトンコードの再構成、SQLiteキャッシュとパース結果を結合したディレクトリツリー生成、`agent-context`/`feedback`/`locate` のオーケストレーションを担う（Python版 `Outliner` クラスに相当）。
@@ -420,6 +429,64 @@ classDiagram
   - `FilePath string`
   - `LineNumber int`
   - `LineContent string`
+
+### コンポーネント詳細設計: `MarkdownParser` (F-15)
+
+`internal/parser/markdown.go` に `MarkdownParser` 具象型を実装し、`Parser` インターフェースを満たす。
+
+#### 1. データ表現とシンボル化方針
+* **見出し（Heading）**:
+  - `kind`: `"heading"` (またはH1〜H6に応じて内部種別保持)
+  - `name`: 見出しのテキストタイトル（前後の `#` や記号を取り除いた文字列）
+  - `parent`: 親見出しのタイトル（スラッシュ区切りの上位階層パス、例: `アーキテクチャ`）
+  - `start_line` / `end_line`: 見出し開始行から、次の「同等以上の見出しの直前行」またはファイル終端までの行範囲
+* **コードブロック（Code Block）**:
+  - `kind`: `"code_block"`
+  - `name`: `code_block:<language>` (同セクション内に同言語が複数ある場合は `code_block:<language>#1`, `code_block:<language>#2`)
+  - `parent`: 所属する見出しのパス
+  - `start_line` / `end_line`: ``` の開始行から終了行
+* **Frontmatter（フロントマター）**:
+  - `kind`: `"frontmatter"`
+  - `name`: `"frontmatter"`
+  - `parent`: `""` (トップレベル疑似シンボル)
+  - `start_line` / `end_line`: 先頭 `---` から 閉じ `---` までの行範囲
+* **`GenerateSkeleton` 出力フォーマット**:
+  - 見出しはインデント階層付きでタイトルを出力する。
+  - 本文テキストは削除・省略し、コードブロック位置には以下の統一コメント形式を差し込む：
+    `<!-- [code_block:<language>] L<start_line>-L<end_line> (<line_count> lines) -->`
+  - Frontmatter が存在する場合は冒頭に以下のコメント形式を挿入する：
+    `<!-- [frontmatter] L<start_line>-L<end_line> (keys...) -->`
+
+#### 2. 見出し階層解析アルゴリズム
+1. `tree-sitter-markdown` の AST を深さ優先探査（DFS）で巡回する。
+2. 先頭の `minus_metadata` / `yaml_frontmatter` などのノードを検知した場合、`frontmatter` 疑似シンボルとして登録する。
+3. `atx_heading` や `setext_heading` を検知した際、`#` の数（Setextの場合は `=` or `-`）から見出しレベル (L1〜L6) を判定する。
+4. **見出しレベルのスタック管理**:
+   - 見出しスタック `stack = []HeadingInfo` を用意する。
+   - 新しい見出し（レベル $L_{new}$）が現れたら、スタックから $L \ge L_{new}$ である見出しをポップする。
+   - 残ったスタックの要素を `/` で繋いだものを親パス（`parent`）とする。
+   - これにより、**見出しレベルが飛躍（スキップ）している非定型Markdownであっても正しくネスト構造を判定**する。
+5. **セクション `end_line` の決定**:
+   - 後続の見出し $L_{next} \le L_{current}$ が現れた時点で、前見出しの `end_line` を $L_{next}$ の直前行（$L_{next}.start\_line - 1$）として確定する。
+
+#### 3. 人間作成Markdown特有のエッジケース対策とテスト仕様
+
+人間の手で作成・編集されたMarkdownで発生しやすい異常系・コーナーケースに対し、以下のテストケースを網羅的に設計し、単体テスト・結合テストとして自動検証する。
+
+| テストID | テストカテゴリ | 入力条件 / 異常系シナリオ | 期待する動作 / 判定基準 |
+|:---|:---|:---|:---|
+| **TEST-MD-01** | 見出しレベル飛躍 | `# H1` の直後に `#### H4` が配置されている | エラーにせず、H4 の親パスを H1 と判定してパースを完遂すること。 |
+| **TEST-MD-02** | 見出し重複 | 同一親セクション内に同名の見出し `## 概要` が2回現れる | `symbol` 指定時にフルパス `H1/概要` で判定、一意に特定できない場合は類似候補を提示し終了コード4を返すこと。 |
+| **TEST-MD-03** | 特殊文字スラッシュ | 見出し文字列にスラッシュが含まれる (`## 1/2. 概要/構成`) | パス区切り文字 `/` と誤認しないよう、エスケープ（`\/`）または引用符指定で解決可能であること。 |
+| **TEST-MD-04** | 複数コードブロック | 1つのセクション内に同言語の ```go が3つ存在する | `code_block:go#1`, `code_block:go#2`, `code_block:go#3` として識別し個別に抽出できること。 |
+| **TEST-MD-05** | 無指定コードブロック | 言語指定のない ``` が存在する | `code_block:text` としてフォールバック識別し、抽出可能であること。 |
+| **TEST-MD-06** | 閉じられていないブロック | ` ``` ` が閉じられないままファイル終端に達している | クラッシュせず、ファイル終端（EOF）までをコードブロックとして範囲特定し出力すること。 |
+| **TEST-MD-07** | リスト内コードブロック | リストのインデント内にコードブロックや見出し状文字列が存在する | 見出し構文ノード以外のテキストを誤って見出しシンボルとして抽出しないこと。 |
+| **TEST-MD-08** | 相対リンク解決 | `[設計書](SPECS/design.md#architecture)` 形式のリンク | `resolve-import` で `SPECS/design.md` の `#architecture` 開始行を正しく返却すること。 |
+| **TEST-MD-09** | アンカー・参照検索 | 同ファイル内 `[章2](#section-2)` や見出し参照 | `resolve-import` で同一ファイル内の定義行を返し、`references` で見出し名・アンカーの参照一覧を返却すること。 |
+| **TEST-MD-10** | フロントマター解析 | 先頭に `---` で囲まれたYAML Frontmatterが存在する | 見出し階層と混同せず `frontmatter` 疑似シンボルとして識別・抽出可能であり、見出し検索時に誤検知しないこと。 |
+
+
 
 ---
 

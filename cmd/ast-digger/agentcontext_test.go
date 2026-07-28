@@ -95,7 +95,7 @@ func TestAgentContextCmd_TopLevelFields(t *testing.T) {
 func TestAgentContextCmd_SupportedLanguagesAndExtensions(t *testing.T) {
 	payload := runAgentContext(t)
 
-	wantLangs := []string{"python", "typescript", "golang", "java", "javascript", "rust"}
+	wantLangs := []string{"python", "typescript", "golang", "java", "javascript", "rust", "markdown"}
 	if len(payload.SupportedLanguages) != len(wantLangs) {
 		t.Fatalf("len(SupportedLanguages) = %d, want %d", len(payload.SupportedLanguages), len(wantLangs))
 	}
@@ -105,7 +105,7 @@ func TestAgentContextCmd_SupportedLanguagesAndExtensions(t *testing.T) {
 		}
 	}
 
-	wantExts := []string{".py", ".ts", ".tsx", ".go", ".java", ".js", ".jsx", ".rs"}
+	wantExts := []string{".py", ".ts", ".tsx", ".go", ".java", ".js", ".jsx", ".rs", ".md", ".markdown"}
 	if len(payload.SupportedExtensions) != len(wantExts) {
 		t.Fatalf("len(SupportedExtensions) = %d, want %d", len(payload.SupportedExtensions), len(wantExts))
 	}

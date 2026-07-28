@@ -34,14 +34,16 @@ type SymbolDataWithDeps struct {
 // recorded in the shared cache database. It corresponds to Python's
 // build_directory_tree/find_references `ext_to_lang`/`supported_exts`.
 var extToLang = map[string]string{
-	".py":   "python",
-	".ts":   "typescript",
-	".tsx":  "typescript",
-	".go":   "go",
-	".java": "java",
-	".js":   "javascript",
-	".jsx":  "javascript",
-	".rs":   "rust",
+	".py":       "python",
+	".ts":       "typescript",
+	".tsx":      "typescript",
+	".go":       "go",
+	".java":     "java",
+	".js":       "javascript",
+	".jsx":      "javascript",
+	".rs":       "rust",
+	".md":       "markdown",
+	".markdown": "markdown",
 }
 
 // excludeDirs lists directory names that are never descended into while
@@ -86,11 +88,15 @@ func (o *Outliner) getParser(filePath string) (parser.Parser, error) {
 		return parser.NewJavaScriptParser(), nil
 	case ".rs":
 		return parser.NewRustParser(), nil
-	default:
-		return nil, &apperr.FileAccessError{
-			Path: filePath,
-			Err:  fmt.Errorf("unsupported file type: %s", ext),
-		}
+	case ".md", ".markdown":
+		return parser.NewMarkdownParser(), nil
+	}
+	if strings.ToLower(filePath) == "markdown" || strings.ToLower(filePath) == ".md" || strings.ToLower(filePath) == ".markdown" {
+		return parser.NewMarkdownParser(), nil
+	}
+	return nil, &apperr.FileAccessError{
+		Path: filePath,
+		Err:  fmt.Errorf("unsupported file type: %s", ext),
 	}
 }
 

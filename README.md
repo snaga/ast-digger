@@ -35,6 +35,7 @@ AST-Digger は、AIエージェントが大規模なコードベースを効率�
 | Java | `.java` |
 | JavaScript | `.js`, `.jsx` |
 | Rust | `.rs` |
+| Markdown | `.md`, `.markdown` |
 
 ---
 
@@ -292,6 +293,9 @@ ast-digger outline <file_path> [--json] [--no-truncate]
 # Rust
 ./ast-digger outline testdata/rust/sample.rs
 
+# Markdown
+./ast-digger outline testdata/markdown/sample.md
+
 # JSON 出力（シンボル構造データの配列）
 ./ast-digger outline testdata/python/importproj/mathutils.py --json
 ```
@@ -354,6 +358,9 @@ ast-digger symbol <file_path> <symbol_path> [--json] [--no-truncate]
 
 # メソッド/関数を抽出（Rust）
 ./ast-digger symbol testdata/rust/sample.rs Greeter.greet
+
+# セクション/コードブロックを抽出（Markdown）
+./ast-digger symbol testdata/markdown/sample.md "Section 1"
 
 # JSON 出力（メタデータ付き）
 ./ast-digger symbol testdata/python/sample.py Greeter.shout --json
@@ -481,6 +488,11 @@ cd ../../../testdata/javascript/importproj
 cd ../../../testdata/rust/importproj
 ../../../ast-digger resolve-import main.rs add
 # → utils.rs:1
+
+# Markdown（リンク/アンカーの参照先解決）
+cd ../../../testdata/markdown/references
+../../../ast-digger resolve-import ref.md "#section-2"
+# → ref.md:3
 ```
 
 ---

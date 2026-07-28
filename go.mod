@@ -22,6 +22,7 @@ require (
 	github.com/mattn/go-pointer v0.0.1 // indirect
 	github.com/ncruces/go-strftime v1.0.0 // indirect
 	github.com/remyoudompheng/bigfft v0.0.0-20230129092748-24d4a6f8daec // indirect
+	github.com/tree-sitter-grammars/tree-sitter-markdown v0.5.3 // indirect
 	github.com/tree-sitter/tree-sitter-rust v0.24.2 // indirect
 	golang.org/x/sys v0.46.0 // indirect
 	modernc.org/libc v1.74.1 // indirect
