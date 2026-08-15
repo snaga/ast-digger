@@ -4,13 +4,13 @@
 
 ```text
 ast-digger/                    # リポジトリルート
-├── SPECS/                      # SDD 仕様書
+├── doc/                        # 公開仕様書・ドキュメント
 │   ├── product.md
 │   ├── tech.md
 │   ├── structure.md
 │   ├── requirements.md
 │   ├── design.md
-│   └── tasks.md
+│   └── adr/                    # アーキテクチャ決定レコード
 ├── cmd/
 │   └── ast-digger/
 │       ├── main.go            # CLI エントリーポイント（cobra ルートコマンド登録）

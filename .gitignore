@@ -10,3 +10,11 @@
 # OS specific files
 .DS_Store
 Thumbs.db
+
+# Internal private development documents
+doc_internal/
+/temp/
+/*.bat
+/dist/
+/AGENTS.md
+/.agent
