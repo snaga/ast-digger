@@ -128,6 +128,7 @@ func TestOutliner_GenerateSkeleton_MultiLanguage(t *testing.T) {
 		{name: "java", filePath: "../../testdata/java/sample.java", parser: parser.NewJavaParser()},
 		{name: "javascript", filePath: "../../testdata/javascript/sample.js", parser: parser.NewJavaScriptParser()},
 		{name: "rust", filePath: "../../testdata/rust/sample.rs", parser: parser.NewRustParser()},
+		{name: "sql", filePath: "../../testdata/sql/snowflake_sample.sql", parser: parser.NewSqlParser()},
 		{name: "markdown", filePath: "../../testdata/markdown/sample.md", parser: parser.NewMarkdownParser()},
 	}
 
@@ -900,6 +901,8 @@ func TestOutliner_FindReferences_MultiLanguage(t *testing.T) {
 		// Rust: RustParser excludes the definition site, same as
 		// Python/TypeScript/JavaScript, so only caller.rs's actual call site counts.
 		{file: filepath.ToSlash(mixedReferencesDir) + "/caller.rs", line: 3}: "helperFn() // actual reference on this line",
+		// SQL: SqlParser excludes CTE definition sites, so only caller.sql's actual query reference counts.
+		{file: filepath.ToSlash(mixedReferencesDir) + "/caller.sql", line: 2}: "SELECT * FROM helperFn;",
 	}
 
 	seen := map[key]bool{}
@@ -1009,6 +1012,14 @@ func TestOutliner_BuildDirectoryTree_MultiLanguage(t *testing.T) {
 		"",
 	}, "\n"))
 
+	writeFile(t, filepath.Join(tmp, "app.sql"), strings.Join([]string{
+		"WITH mixed_cte AS (",
+		"    SELECT 1 AS val",
+		")",
+		"SELECT * FROM mixed_cte;",
+		"",
+	}, "\n"))
+
 	// node_modules must be excluded regardless of the file extensions it
 	// contains (excludeDirs is language-agnostic).
 	writeFile(t, filepath.Join(tmp, "node_modules", "ignored.ts"), "export function shouldBeIgnored(): void {}\n")
@@ -1020,7 +1031,7 @@ func TestOutliner_BuildDirectoryTree_MultiLanguage(t *testing.T) {
 	}
 
 	for _, want := range []string{
-		"app.py", "app.ts", "app.go", "app.java", "app.js", "app.rs",
+		"app.py", "app.ts", "app.go", "app.java", "app.js", "app.rs", "app.sql",
 		"class MixedGreeter", "def greet",
 		"def mixed_top_level_py",
 		"class MixedWidget", "def render",
@@ -1475,6 +1486,18 @@ func TestOutliner_ExtractSymbolWithDependencies_MultiLanguage(t *testing.T) {
 	writeFile(t, filepath.Join(tmp, "rs", "dep.rs"), "pub fn helper() -> i32 { 42 }\n")
 	writeFile(t, filepath.Join(tmp, "rs", "main.rs"), "use crate::dep::helper;\nmod dep;\npub fn main_fn() -> i32 { helper() }\n")
 
+	// SQL
+	writeFile(t, filepath.Join(tmp, "sql", "query.sql"), strings.Join([]string{
+		"WITH helper AS (",
+		"    SELECT 42 AS val",
+		"),",
+		"main_fn AS (",
+		"    SELECT val FROM helper",
+		")",
+		"SELECT * FROM main_fn;",
+		"",
+	}, "\n"))
+
 	tests := []struct {
 		lang       string
 		dir        string
@@ -1488,6 +1511,7 @@ func TestOutliner_ExtractSymbolWithDependencies_MultiLanguage(t *testing.T) {
 		{lang: "java", dir: filepath.Join(tmp, "java"), filePath: filepath.Join("com", "example", "Main.java"), symbolName: "Main.mainFn", depName: "Dep"},
 		{lang: "javascript", dir: filepath.Join(tmp, "js"), filePath: "main.js", symbolName: "main_fn", depName: "helper"},
 		{lang: "rust", dir: filepath.Join(tmp, "rs"), filePath: "main.rs", symbolName: "main_fn", depName: "helper"},
+		{lang: "sql", dir: filepath.Join(tmp, "sql"), filePath: "query.sql", symbolName: "main_fn", depName: "helper"},
 	}
 
 	o := NewOutliner()
@@ -1510,6 +1534,36 @@ func TestOutliner_ExtractSymbolWithDependencies_MultiLanguage(t *testing.T) {
 				t.Errorf("%s: expected dependency %q, got dependencies: %+v", tt.lang, tt.depName, res.Dependencies)
 			}
 		})
+	}
+}
+
+// TestOutliner_ExtractSymbolWithDependencies_SQL_UpstreamDAG verifies that
+// Outliner.ExtractSymbolWithDependencies on a multi-CTE Snowflake SQL file
+// with followImports=true recursively tracks and extracts all upstream CTEs
+// (e.g. tax_calculation -> joined_sales -> cleaned_orders, user_master -> raw_orders).
+func TestOutliner_ExtractSymbolWithDependencies_SQL_UpstreamDAG(t *testing.T) {
+	o := NewOutliner()
+	sqlPath := "../../testdata/sql/snowflake_sample.sql"
+
+	res, err := o.ExtractSymbolWithDependencies(sqlPath, "tax_calculation", true)
+	if err != nil {
+		t.Fatalf("ExtractSymbolWithDependencies failed: %v", err)
+	}
+
+	if res.Name != "tax_calculation" {
+		t.Errorf("got symbol name %q, want 'tax_calculation'", res.Name)
+	}
+
+	wantDeps := []string{"joined_sales", "cleaned_orders", "user_master", "raw_orders"}
+	depNames := make(map[string]bool)
+	for _, dep := range res.Dependencies {
+		depNames[dep.Name] = true
+	}
+
+	for _, want := range wantDeps {
+		if !depNames[want] {
+			t.Errorf("expected upstream CTE %q in dependencies: %+v", want, res.Dependencies)
+		}
 	}
 }
 
@@ -1578,4 +1632,3 @@ func TestOutliner_FindReferences_Markdown(t *testing.T) {
 		t.Fatalf("expected 2 references, got %d: %+v", len(got), got)
 	}
 }
-

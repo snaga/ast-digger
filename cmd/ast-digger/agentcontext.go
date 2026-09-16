@@ -100,8 +100,8 @@ func buildAgentContext(rootCmd *cobra.Command) AgentContext {
 	return AgentContext{
 		SchemaVersion:       agentContextSchemaVersion,
 		CLIName:             rootCmd.Name(),
-		SupportedLanguages:  []string{"python", "typescript", "golang", "java", "javascript", "rust", "markdown"},
-		SupportedExtensions: []string{".py", ".ts", ".tsx", ".go", ".java", ".js", ".jsx", ".rs", ".md", ".markdown"},
+		SupportedLanguages:  []string{"python", "typescript", "golang", "java", "javascript", "rust", "sql", "markdown"},
+		SupportedExtensions: []string{".py", ".ts", ".tsx", ".go", ".java", ".js", ".jsx", ".rs", ".sql", ".md", ".markdown"},
 		Commands:            commands,
 	}
 }

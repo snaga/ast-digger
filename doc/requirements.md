@@ -8,11 +8,11 @@ AST-Diggerは、AIエージェントが大規模なコードベースを効率�
 
 - 開発・ビルド環境に Go 1.22 以上のツールチェインがインストールされていること。
 - 実行環境には Go ランタイムのインストールは不要（コンパイル済みの単一バイナリとして配布・実行されるため）。
-- 解析対象のプロジェクトディレクトリに Python, TypeScript, Go, Java, JavaScript, Rust のソースコード、または Markdown ドキュメントが存在すること。
+- 解析対象のプロジェクトディレクトリに Python, TypeScript, Go, Java, JavaScript, Rust のソースコード、Markdown ドキュメント、または SQL（Snowflake/ANSI）スクリプトが存在すること。
 
 ## 制約条件
 
-- 解析のターゲット言語・ドキュメント（解析対象ファイル）として、Python, TypeScript, Go, Java, JavaScript, Rust, および Markdown (`.md`, `.markdown`) をサポートする。
+- 解析のターゲット言語・ドキュメント（解析対象ファイル）として、Python, TypeScript, Go, Java, JavaScript, Rust, Markdown (`.md`, `.markdown`), および SQL (`.sql`) をサポートする。
 - ローカル環境でネットワーク接続を行わずに完全自己完結で動作しなければならない。
 - 構文解析エンジンとして tree-sitter（Go バインディング）を使用し、仮想環境のライブラリ依存などの完全な解決（LSPレベルの動的な型解決等）は行わない。
 
@@ -169,6 +169,65 @@ AST-Diggerは、AIエージェントが大規模なコードベースを効率�
       - エージェントが Markdown ファイルをパースした際、システムは先頭の Frontmatter ブロックを `frontmatter` という疑似シンボルとして識別し、見出し階層と混同せずに解析しなければならない。
       - `outline` コマンドにおいて、Frontmatter が存在する場合は `<!-- [frontmatter] L1-L6 (title, tags, author) -->` の形式でスケルトンにメタデータ領域を明示しなければならない。
       - `symbol` または `locate` コマンドで `frontmatter` を指定した場合、システムは Frontmatter の内容全体または行範囲を抽出・特定して返却しなければならない。
+
+### 要件カテゴリL: SQLドキュメント・CTE構造解析 (SQL Document & CTE Outline Extraction - Snowflake Dialect)
+
+- 要件 L-1: SQLファイルのスケルトン（CTE一覧・DAG依存関係・ステートメント骨格）抽出
+   - ユーザーストーリー
+      - 私はAI開発エージェントとして、数千行に及ぶ長大なバッチ処理SQL（Snowflake/DWH）のクエリ本文（ノイズ）を読まずに、どのようなCTE（Common Table Expression）やステートメントで構成され、CTE同士や実テーブルがどのように依存し合っているかのデータフロー（DAG）を把握したい。なぜなら、トークン消費を抑えてリファクタリングの全体像を即座に理解するためだ。
+   - 受け入れ基準
+      - エージェントがSQLファイル（`.sql`）のパスを指定して`outline`コマンドを実行したとき、システムは `tree-sitter-sql` を用いて構文解析し、`WITH` 句内の各CTE名、開始行・終了行、依存する参照テーブル/上流CTE一覧（`depends_on`）、および出力カラム一覧を含むスケルトンを出力しなければならない。
+      - 各CTE内部のクエリ本文は省略（`/* ... */`）され、全体のデータフロー構造を最小トークンで提示しなければならない。
+      - Snowflake固有の構文（`QUALIFY`、`MERGE INTO`、`LATERAL FLATTEN`、`COPY INTO`、`CREATE OR REPLACE TABLE AS` 等）を含むSQLであっても、パースエラーを起こさずCTE階層とメインステートメントを正しく識別して出力しなければならない。
+      - `--json` オプション指定時、各CTEの名称、行範囲、依存先一覧（`depends_on`）、および内包するサブクエリ添字情報を構造化JSONとして返却しなければならない。
+
+- 要件 L-2: CTEのピンポイントコード抽出と上流依存の自動追跡 (`symbol`, `--follow-imports`)
+   - ユーザーストーリー
+      - 私はAI開発エージェントとして、リファクタリング対象の特定CTEの実装コードだけを取得したい。また、そのCTEの計算に必要な上流CTE群だけを一括して芋づる式に読み込みたい。なぜなら、無関係な他の大量のCTEを排除し、最小限のコンテキストで安全にコード修正するためだ。
+   - 受け入れ基準
+      - エージェントがSQLファイルとCTE名（例: `ast-digger symbol query.sql cte_sales`）を指定したとき、システムは該当CTEの定義ブロック（`cte_sales AS (SELECT ...)`）のみをピンポイントで抽出して返却しなければならない。
+      - エージェントが `--follow-imports` オプションを付与した場合、システムは対象CTEが `FROM` や `JOIN` 等で参照している上流のCTE群を再帰的に追跡し、依存チェーンに含まれるCTE定義コードのみを依存順序に沿って一括連結（またはJSON配列）して返却しなければならない。
+      - 循環参照や自己参照（`WITH RECURSIVE`）が存在する場合であっても、訪問済み管理により無限ループを起こさず安全に探索を停止しなければならない。
+
+- 要件 L-3: インデックス添字による名前なしサブクエリの特定・抽出 (`locate`, `symbol`)
+   - ユーザーストーリー
+      - 私はAI開発エージェントとして、SQLの `WHERE IN (...)` や `FROM (...)` などの深いネストに潜む名前のないサブクエリを新しいCTEに外出しリファクタリングしたい。そのため、サブクエリの正確な行範囲を特定し、そのクエリ本文だけを取り出したい。
+   - 受け入れ基準
+      - エージェントが親CTE名とインデックス添字（例: `cte_orders/subquery[0]` または `cte_orders/subquery#0`）、あるいはフラットな添字（`subquery[0]`）を指定して `locate` コマンドを実行したとき、システムは該当サブクエリの開始行・終了行（例: `query.sql:120-145`）を正確に返却しなければならない。
+      - エージェントが同様のパスを指定して `symbol` コマンドを実行したとき、システムは該当サブクエリのコード本文のみを抽出して返却しなければならない。
+      - サブクエリにエイリアスが付与されている場合（例: `FROM (SELECT ...) AS sub_items`）、エイリアス名（`cte_orders/sub_items`）および添字（`cte_orders/subquery[0]`）の双方向で特定可能でなければならない。
+
+- 要件 L-4: CTEおよび実テーブルの参照箇所探索・依存解決 (`references`, `resolve-import`)
+   - ユーザーストーリー
+      - 私はAI開発エージェントとして、特定のCTEや大元テーブルを変更・削除した際の影響範囲（下流で参照しているCTE一覧）を特定したい。
+   - 受け入れ基準
+      - エージェントがシンボル名（CTE名またはテーブル名）を指定して `references` コマンドを実行したとき、システムはSQLファイル内（およびプロジェクト全体）から該当シンボルを参照（`FROM`, `JOIN`, `MERGE USING` 等）している行番号と行内容を抽出して返却しなければならない。
+      - エージェントがCTE名を指定して `resolve-import` コマンドを実行したとき、システムは該当CTEが定義されている行番号を即座に解決して返却しなければならない。
+
+- 要件 L-5: 重複テーブル・CTE参照探索と集約分析 (Duplicate Scan & Reference Tracing for SNOW-005)
+   - ユーザーストーリー
+      - 私はAI開発エージェントとして、`icepick` の `DuplicateTableScanRule` (SNOW-005) 等で検出された「複数CTEにまたがる同一テーブルの重複スキャン」を解消するため、対象テーブルを参照しているすべてのCTEと行番号を一覧特定し、共通CTEに集約するための比較材料を取得したい。
+   - 受け入れ基準
+      - エージェントがテーブル名（例: `ast-digger references raw_orders`）を指定したとき、システムは単一SQLファイル内のどのCTE（およびメインステートメント）がそのテーブルを参照しているかを網羅的に抽出して返却しなければならない。
+      - エージェントが重複参照している各CTEを指定して `symbol` コマンドを実行したとき、それぞれのフィルタ条件（WHERE句）や射影カラムを比較できるように、該当CTEコードを独立して迅速に取得できなければならない。
+
+- 要件 L-6: 相関サブクエリおよびネスト派生テーブルの外科的抽出 (Correlated & Nested Subquery Extraction for SNOW-002, SNOW-007)
+   - ユーザーストーリー
+      - 私はAI開発エージェントとして、`icepick` の `CorrelatedSubqueryRule` (SNOW-002: 相関サブクエリ) や `NestedSubqueryRule` (SNOW-007: ネストされた派生テーブル) を修正するため、親クエリのWHERE/SELECT/JOIN句に潜むサブクエリの正確な行位置とコード本文を取得し、独立したCTEへの外出しおよび `LEFT JOIN` 化を行いたい。
+   - 受け入れ基準
+      - システムは `tree-sitter-sql` の構文解析を通じて、親CTE内部に存在するサブクエリノードを自動検出し、`subquery[0]`, `subquery[1]` などの出現順添字パスでアクセス可能にしなければならない。
+      - エージェントが `locate` コマンドを実行したとき、サブクエリ置換対象の正確な行範囲（例: `L120-L145`）および外出し先となる親CTEの定義開始行（例: `L80`）をピンポイントで返却し、最小限の差分置換（外科手術的リファクタリング）を可能にしなければならない。
+
+- 要件 L-7: ビュー定義（CREATE VIEW）のシンボル名認識と警告出力の最適化
+   - ユーザーストーリー
+      - 私はAI開発エージェントとして、`CREATE VIEW`、`CREATE SECURE VIEW`、`CREATE MATERIALIZED VIEW`、`CREATE DYNAMIC TABLE` 等で定義されたSQLファイルから、ビュー名/テーブル名を直接シンボル名として指定してビュー定義全体（`CREATE ... AS SELECT ...`）をピンポイント抽出したい。また、複数回のパース時に同じ構文警告がコンソールに連打されるノイズを排除したい。
+   - 受け入れ基準
+      - エージェントが `CREATE [OR REPLACE] [SECURE | MATERIALIZED | TRANSIENT | RECURSIVE] VIEW <view_name>` や `CREATE [TRANSIENT | DYNAMIC] TABLE <table_name>` を含むSQLファイルを解析したとき、システムは `main_query` ではなく実際のビュー名/テーブル名を `Kind: "statement"` のシンボル名として抽出しなければならない。
+      - エージェントがビュー名を指定して `locate` または `symbol` コマンドを実行したとき、システムは該当ビュー定義全体の開始行・終了行およびコード本文を返却しなければならない。
+      - 同一SQLファイルに対する構文警告（`Warning: Syntax errors or dialect extensions detected in ...`）は、同一プロセス実行内で1ファイルにつき最大1回のみ出力し、重複連打を抑止しなければならない。
+
+
+
 
 
 

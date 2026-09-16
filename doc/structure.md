@@ -27,6 +27,8 @@ ast-digger/                    # リポジトリルート
 │   │   ├── java.go            # Java 解析用パーサー
 │   │   ├── javascript.go      # JavaScript 解析用パーサー
 │   │   ├── rust.go            # Rust 解析用パーサー
+│   │   ├── markdown.go        # Markdown ドキュメント解析用パーサー
+│   │   ├── sql.go             # SQL (Snowflake Dialect) 解析用パーサー
 │   │   └── fuzzy.go           # シンボル候補提示ロジック
 │   ├── db/
 │   │   └── db.go              # SQLite キャッシュデータベース操作
@@ -34,7 +36,7 @@ ast-digger/                    # リポジトリルート
 │   │   └── outline.go         # スケルトンコード抽出・ディレクトリツリー合成
 │   └── apperr/
 │       └── apperr.go          # カスタムエラー型・終了コードタクソノミー
-├── testdata/                   # ユニットテスト用のサンプルコード（Python/TS/Go/Java/JS/Rust）
+├── testdata/                   # ユニットテスト用のサンプルコード（Python/TS/Go/Java/JS/Rust/MD/SQL）
 ├── README.md                  # ツール利用方法
 ├── Makefile                   # ビルドスクリプト
 └── .gitignore                 # バージョン管理除外設定

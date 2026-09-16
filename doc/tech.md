@@ -8,7 +8,8 @@
 - **Go (1.22+)**: ツール本体、CLI、および AST 解析エンジンの実装に使用する。
 
 ### 2. ターゲット言語 (Target Language - 解析対象)
-- **Python / TypeScript / Go / Java / JavaScript / Rust**: 解析（アウトライン抽出、ピンポイント抽出、参照探索等）をサポートする主要な対象言語。
+- **Python / TypeScript / Go / Java / JavaScript / Rust / Markdown / SQL**: 解析（アウトライン抽出、ピンポイント抽出、参照探索、CTE依存解析等）をサポートする主要な対象言語。
+  - **SQL**: メイン方言として **Snowflake SQL**（CTE DAG、MERGE INTO、QUALIFY、LATERAL FLATTEN等）および標準SQL構文に対応する。
 - **C/C++ / etc.**: 将来的な対応拡張ターゲット（各言語の tree-sitter パーサーを追加可能な設計とする）。
 
 ## 🏗️ フレームワーク & ライブラリ
@@ -16,7 +17,7 @@
 | カテゴリ | ライブラリ候補 | 用途 / 選定理由 |
 |:---|:---|:---|
 | tree-sitter バインディング | `github.com/tree-sitter/go-tree-sitter` または `github.com/smacker/go-tree-sitter` | tree-sitter コア（C実装）への Go バインディング。**CGO 必須**。 |
-| tree-sitter 文法 | `tree-sitter-python`, `tree-sitter-typescript`, `tree-sitter-go`, `tree-sitter-java`, `tree-sitter-javascript`, `tree-sitter-rust` の Go 向け文法パッケージ | 主要6言語をターゲットとして解析する。 |
+| tree-sitter 文法 | `tree-sitter-python`, `tree-sitter-typescript`, `tree-sitter-go`, `tree-sitter-java`, `tree-sitter-javascript`, `tree-sitter-rust`, `tree-sitter-sql` の Go 向け文法パッケージ | 主要言語（コード/ドキュメント/SQL）をターゲットとして解析する。SQLはSnowflake/ANSI構文のCTEやサブクエリをサポートする。 |
 | CLI フレームワーク | `github.com/spf13/cobra` | サブコマンド・フラグ定義・ヘルプ生成に対応。`agent-context` のスキーマをコマンド定義から動的導出する設計がcobraのコマンドツリーAPIに依存するため採用。 |
 | SQLite ドライバ | `modernc.org/sqlite`（Pure Go, CGO不要） | キャッシュ・インデックス（シンボルデータベース）用。tree-sitter側は既にCGO必須だが、SQLite部分だけでもPure Go実装にしておくことで依存関係とビルドの複雑さを最小限に抑える。 |
 | JSON | 標準ライブラリ `encoding/json` | `--json` 出力のシリアライズに使用。追加依存を避ける。 |

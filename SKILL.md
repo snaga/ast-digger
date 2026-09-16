@@ -48,6 +48,30 @@ AST-Digger を用いて大規模プロジェクトのコードをコンテキス
 
 ---
 
+## ❄️ Snowflake SQL / Icepick 最適化リファクタリングプレイブック (SQL Playbook)
+
+数千行のSnowflake SQLやdbtバッチ処理をリファクタリングする際、`icepick`（診断・等価性検証）と `ast-digger`（外科手術的探索・コード抽出）を連携させた黄金ワークフローを推奨します。
+
+1. **全体診断と処方箋の取得 (icepick diag)**:
+   - `icepick diag query.sql --json` を実行し、改善すべきルール（例: `SNOW-005` 重複スキャン、`SNOW-002` 相関サブクエリ）を特定します。
+2. **SQL全体のCTEデータフロー（DAG）を把握 (ast-digger outline)**:
+   - `ast-digger outline query.sql`
+   - 全CTEの行範囲、および `depends_on: [...]` 依存グラフを数十行のスケルトンで即座に把握します。
+3. **重複テーブルスキャンの集約探索 (SNOW-005 対策)**:
+   - `ast-digger references raw_orders`: 重複スキャンしている全CTEの行番号を特定します。
+   - `ast-digger symbol query.sql cte_name`: 各CTEのWHERE条件を比較し、共通CTE（`base_orders`）を新設します。
+4. **相関サブクエリ・派生テーブルの外出し (SNOW-002 / SNOW-007 対策)**:
+   - `ast-digger locate query.sql "cte_name/subquery[0]"`: サブクエリの置換対象行を特定します。
+   - `ast-digger symbol query.sql "cte_name/subquery[0]"`: サブクエリ本文を抜き出して新しい集計CTEを作成します。
+   - `ast-digger locate query.sql cte_name`: 新規CTEの安全な挿入位置（親CTEの前）を特定します。
+5. **上流CTE依存の一括追跡 (`--follow-imports`)**:
+   - `ast-digger symbol query.sql target_cte --follow-imports`: リファクタリング対象CTEの計算に必要な上流CTE群だけを一括抽出します。
+6. **リファクタリング後の等価性検証 (icepick verify)**:
+   - `icepick verify original.sql optimized.sql -o verify.sql`
+   - Snowflake上で `EXCEPT` による差分ゼロ（完全一致等価性）を証明して完了します。
+
+---
+
 ## 🚫 避けるべきアンチパターン
 
 * **巨大シンボル・巨大セクションの無計画な全取得**:

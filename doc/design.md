@@ -37,6 +37,10 @@
 | バックログ機能 | F-13 | 対応言語・拡張子一覧提示 (将来機能) | `agent-context` JSONメタデータに `supported_languages` / `supported_extensions` を追加。 | 要件 J-1 |
 | バックログ機能 | F-14 | 依存コード自動追跡 (将来機能) | `symbol` に `--follow-imports` オプションを追加し、依存先コード本文を一括抽出・返却する。 | 要件 J-2 |
 | ドキュメント解析 | F-15 | Markdownドキュメント構造解析 | `tree-sitter-markdown` を用いて見出し階層（H1〜H6）とコードブロック（Mermaid等）をパースし、スケルトン・ピンポイント抽出・セクション特定を行う。 | 要件 K-1, K-2, K-3 |
+| SQL構造解析 | F-16 | SQL/CTEアウトライン・データフロースケルトン生成 | `tree-sitter-sql` を用いてSnowflake/標準SQLのCTE（WITH句）、DAG依存関係（depends_on）、メインステートメントをパースし、軽量スケルトンを生成する。 | 要件 L-1 |
+| SQL構造解析 | F-17 | サブクエリ添字抽出とCTE依存追跡 | `subquery[0]` による名前なしサブクエリの特定・抽出、および `--follow-imports` による上流CTE依存コードの一括抽出を行う。 | 要件 L-2, L-3, L-4 |
+| SQL構造解析 | F-18 | Icepick連携最適化リファクタリング探索 | `icepick` の診断結果（SNOW-002, SNOW-005, SNOW-007等）に基づく重複スキャン集約、相関サブクエリJOIN化、CTE外出しのピンポイント外科手術的探索を行う。 | 要件 L-5, L-6 |
+| SQL構造解析 | F-19 | ビュー定義（CREATE VIEW）認識と警告抑止 | `CREATE [OR REPLACE] [SECURE | MATERIALIZED] VIEW` や `CREATE DYNAMIC TABLE` から名称を抽出してシンボル登録し、同一ファイルの警告連打を抑止する。 | 要件 L-7 |
 
 
 ---
@@ -400,6 +404,8 @@ classDiagram
 - **`JavaParser`固有の留意点**: パッケージ宣言（`package_declaration`）からパッケージ名を取得し、`ResolveImports`での完全修飾名解決に使用する。`internal`パッケージ配下でも`Java`は予約語衝突がないため`java.go`のままファイル命名する（Goの`golang.go`のような回避命名は不要）。
 - **`JavaScriptParser`固有の留意点**: `TypeScriptParser`とほぼ同一のtree-sitterノード走査ロジックを型注釈なしの文法（`tree-sitter-javascript`）に対して適用する。共通化可能なロジック（例: 相対インポートパス解決、doc comment検出）が多いが、既存の`PythonParser`/`TypeScriptParser`/`GolangParser`と同様に1言語につき1つの独立した具象型として実装する方針を踏襲し、コード共有は必要最小限のprivateヘルパー関数の切り出しに留める。
 - **`RustParser`固有の留意点**: `struct_item`/`enum_item`/`function_item`/`trait_item`/`impl_item`/`mod_item` ノードを走査し、`struct`, `enum`, `function`, `trait`, `impl`, `module` として分類抽出する。`impl` ブロック内の関数はレシーバ型名（`impl MyStruct` 等）を `Parent` として扱い、`kind: "method"` として出力する。doc comment は `///`（outer doc）および `//!`（inner doc）を保持する。`use_declaration` から `use crate::...` や `use super::...` などのローカルモジュールインポートを解析し `ResolveImports` を行う。
+- **`MarkdownParser`固有の留意点**: `tree-sitter-markdown` を用いて見出し（H1〜H6）を `kind: "section"`、コードブロックを `kind: "code_block"`（インデックス付き `code_block:lang#index`）として抽出する。
+- **`SqlParser`固有の留意点 (Snowflake Dialect)**: `tree-sitter-sql` を用いて `with_clause` 以下の各 `common_table_expression`（CTE）を `kind: "cte"` として抽出し、内包される `subquery` を出現順インデックス（`subquery[0]` / `subquery#0`）およびエイリアス名（`sub_alias`）で階層化（`cte_name/subquery[0]`）して抽出する。各CTEのクエリ本文から `FROM`/`JOIN`/`LATERAL FLATTEN` の参照テーブル・上流CTE名を解析し `depends_on` 依存リストを自動構築する。
 
 #### 3. `db.SymbolDatabase`（`internal/db/db.go`）
 - **役割**: SQLiteを用いたファイルメタデータ・シンボルインデックスの永続化管理。
@@ -531,5 +537,331 @@ classDiagram
 - `internal/outline/outline.go`: `ExtractSymbol` の抽出結果に対し、インポート文を走査し `ResolveImports` を連鎖的に呼び出して定義先コード本文を一括取得する。
 - 循環参照防止のため訪問済みマップ（`visitedMap`）を保持し、再帰探索時の安全性を確保する。
 
+---
+
+## 📊 SQL・CTE構造解析 (Snowflake Dialect) の設計詳細
+
+### 1. ASTノード走査とシンボルマッピング
+
+Snowflake/ANSI SQLを解析する `SqlParser`（`internal/parser/sql.go`）は、以下のASTノードを走査し、`SymbolData` にマッピングする。
+
+| ASTノード種別 | 検出要素 | SymbolData.Kind | SymbolData.Name | 親シンボル (Parent) |
+|:---|:---|:---|:---|:---|
+| `common_table_expression` | WITH句内のCTE | `"cte"` | CTE識別子名（例: `cleaned_orders`） | `nil` |
+| `subquery` (名前なし) | WHERE/FROM/SELECT内のサブクエリ | `"subquery"` | `subquery[0]`, `subquery[1]`（出現順添字） | 親CTE名またはステートメント |
+| `subquery` (エイリアス付き) | `FROM (SELECT ...) AS t` | `"subquery"` | `t`（エイリアス名）および `subquery[i]` | 親CTE名またはステートメント |
+| `insert_statement` / `create_table_statement` / `merge_statement` | 最終更新ステートメント | `"statement"` | 対象テーブル名（例: `marts.daily_sales`） | `nil` |
+| `select_statement` (トップレベル) | メインクエリ | `"statement"` | `"main_query"` | `nil` |
+
+### 2. データフロー（DAG）依存関係の自動構築 (`depends_on`)
+
+- 各CTEブロック内部を走査し、`table_reference` ノードを抽出する。
+- 参照されている名前が同SQLファイル内の他のCTE名と一致する場合は **「上流CTE依存」**、一致しない場合は **「実テーブル/ソース依存」** として分類する。
+- `SymbolData` のメタデータに依存シンボル一覧（`depends_on: []string`）を記録する。
+- **Snowflake固有構文への配慮**:
+  - `LATERAL FLATTEN(input => parse_json(col))` のようなテーブル関数呼び出しを検知してもパニックせず、親テーブル参照を正しく抽出する。
+  - `MERGE INTO <target> USING <source_cte_or_table> ON ...` におけるソースとターゲットの両方をステートメントの入出力として認識する。
+  - `QUALIFY` 句や `PIVOT`/`UNPIVOT` 句を含むCTEでも構文解析を正常に完了させる。
+
+### 3. スケルトンコード生成 (`GenerateSkeleton`)
+
+数千行のSQLを数十行に圧縮するため、以下のルールでスケルトンを再構成する：
+```sql
+-- CTE Outline (3,420 lines -> 35 lines, Snowflake Dialect)
+WITH
+  raw_orders AS (L15-L65, depends_on: [source_db.orders]) /* ... */,
+  cleaned_orders AS (L66-L140, depends_on: [raw_orders]) /* ... */,
+  user_master AS (L141-L210, depends_on: [source_db.users]) /* ... */,
+  joined_sales AS (L211-L450, depends_on: [cleaned_orders, user_master]) /* ... */,
+  tax_calculation AS (L451-L890, depends_on: [joined_sales]) /* ... */
+
+INSERT INTO marts.daily_sales_report
+SELECT user_id, order_count, total_amount /* ... */
+FROM tax_calculation;
+```
+- `--json` モードでは、各CTEの `name`, `start_line`, `end_line`, `depends_on`, `subqueries`（添字と行範囲）を階層構造JSONで出力する。
+
+### 4. サブクエリ添字パスの解決アルゴリズム (`locate` / `symbol`)
+
+- シンボルパスはスラッシュ区切りの階層パスおよび通し番号をサポートする：
+  1. `cte_orders/subquery[0]` または `cte_orders/subquery#0`: `cte_orders` 内の0番目のサブクエリ。
+  2. `cte_orders/sub_items`: エイリアス `sub_items` を持つサブクエリ。
+  3. `subquery[0]`: ファイル全体またはメインステートメント内の通し番号サブクエリ。
+- パス解決時、角括弧 `[...]` とシャープ `#...` の両方を等価として正規化パースし、シェルエスケープの差異を吸収する。
+
+### 5. 上流CTE依存自動追跡 (`symbol --follow-imports`)
+
+- リファクタリング対象のCTE（例: `tax_calculation`）が指定された場合：
+  1. 対象CTEの `depends_on` から上流CTE名（例: `joined_sales`）を再帰的に走査。
+  2. 訪問済みマップ（`visitedMap`）により、自己参照や循環参照を安全にガード。
+  3. トポロジカルソート順（最上流 ➔ 目的のCTE）でCTEブロックを抽出し、以下の形式で連結出力する：
+     ```sql
+     --- Dependency: raw_orders (L15-L65) ---
+     raw_orders AS ( ... )
+     
+     --- Dependency: cleaned_orders (L66-L140) ---
+     cleaned_orders AS ( ... )
+     
+     --- Target: tax_calculation (L451-L890) ---
+     tax_calculation AS ( ... )
+     ```
+
+### 6. Icepick連携コード探索アーキテクチャ (Deterministic Optimization Loop)
+
+AIエージェントが `icepick`（Snowflake AST Query Optimizer & Linter）と連携して、安全かつ最小トークンでSQLリファクタリングを実行するための探索アーキテクチャを定義する。
+
+```mermaid
+sequenceDiagram
+    autonumber
+    actor Agent as AIエージェント
+    participant Icepick as icepick (Linter/Optimizer)
+    participant Digger as ast-digger (AST Explorer)
+    participant File as 対象SQLファイル (3,000行)
+
+    Agent->>Icepick: icepick diag pipeline.sql --json
+    Icepick-->>Agent: 処方箋 (SNOW-005 重複スキャン / SNOW-002 相関サブクエリ)
+    
+    rect rgb(240, 248, 255)
+        note over Agent, Digger: ast-digger による外科手術的探索 (コンテキスト節約)
+        Agent->>Digger: references raw_events (重複テーブルの参照箇所を特定)
+        Digger-->>Agent: 各CTEの参照行番号一覧 (L45, L180, L620)
+        Agent->>Digger: symbol pipeline.sql cte_orders (対象CTE本体のみ抽出)
+        Digger-->>Agent: 該当CTEコード (数十行)
+        Agent->>Digger: locate pipeline.sql "cte_orders/subquery[0]" (置換範囲特定)
+        Digger-->>Agent: 置換行 L120-L145, 挿入行 L80
+    end
+
+    Agent->>File: ピンポイント編集 (新規CTE追加 & サブクエリ参照置換)
+    Agent->>Digger: outline pipeline.sql (DAGと骨格の再検証)
+`internal/parser/markdown.go` に `MarkdownParser` 具象型を実装し、`Parser` インターフェースを満たす。
+
+#### 1. データ表現とシンボル化方針
+* **見出し（Heading）**:
+  - `kind`: `"heading"` (またはH1〜H6に応じて内部種別保持)
+  - `name`: 見出しのテキストタイトル（前後の `#` や記号を取り除いた文字列）
+  - `parent`: 親見出しのタイトル（スラッシュ区切りの上位階層パス、例: `アーキテクチャ`）
+  - `start_line` / `end_line`: 見出し開始行から、次の「同等以上の見出しの直前行」またはファイル終端までの行範囲
+* **コードブロック（Code Block）**:
+  - `kind`: `"code_block"`
+  - `name`: `code_block:<language>` (同セクション内に同言語が複数ある場合は `code_block:<language>#1`, `code_block:<language>#2`)
+  - `parent`: 所属する見出しのパス
+  - `start_line` / `end_line`: ``` の開始行から終了行
+* **Frontmatter（フロントマター）**:
+  - `kind`: `"frontmatter"`
+  - `name`: `"frontmatter"`
+  - `parent`: `""` (トップレベル疑似シンボル)
+  - `start_line` / `end_line`: 先頭 `---` から 閉じ `---` までの行範囲
+* **`GenerateSkeleton` 出力フォーマット**:
+  - 見出しはインデント階層付きでタイトルを出力する。
+  - 本文テキストは削除・省略し、コードブロック位置には以下の統一コメント形式を差し込む：
+    `<!-- [code_block:<language>] L<start_line>-L<end_line> (<line_count> lines) -->`
+  - Frontmatter が存在する場合は冒頭に以下のコメント形式を挿入する：
+    `<!-- [frontmatter] L<start_line>-L<end_line> (keys...) -->`
+
+#### 2. 見出し階層解析アルゴリズム
+1. `tree-sitter-markdown` の AST を深さ優先探査（DFS）で巡回する。
+2. 先頭の `minus_metadata` / `yaml_frontmatter` などのノードを検知した場合、`frontmatter` 疑似シンボルとして登録する。
+3. `atx_heading` や `setext_heading` を検知した際、`#` の数（Setextの場合は `=` or `-`）から見出しレベル (L1〜L6) を判定する。
+4. **見出しレベルのスタック管理**:
+   - 見出しスタック `stack = []HeadingInfo` を用意する。
+   - 新しい見出し（レベル $L_{new}$）が現れたら、スタックから $L \ge L_{new}$ である見出しをポップする。
+   - 残ったスタックの要素を `/` で繋いだものを親パス（`parent`）とする。
+   - これにより、**見出しレベルが飛躍（スキップ）している非定型Markdownであっても正しくネスト構造を判定**する。
+5. **セクション `end_line` の決定**:
+   - 後続の見出し $L_{next} \le L_{current}$ が現れた時点で、前見出しの `end_line` を $L_{next}$ の直前行（$L_{next}.start\_line - 1$）として確定する。
+
+#### 3. 人間作成Markdown特有のエッジケース対策とテスト仕様
+
+人間の手で作成・編集されたMarkdownで発生しやすい異常系・コーナーケースに対し、以下のテストケースを網羅的に設計し、単体テスト・結合テストとして自動検証する。
+
+| テストID | テストカテゴリ | 入力条件 / 異常系シナリオ | 期待する動作 / 判定基準 |
+|:---|:---|:---|:---|
+| **TEST-MD-01** | 見出しレベル飛躍 | `# H1` の直後に `#### H4` が配置されている | エラーにせず、H4 の親パスを H1 と判定してパースを完遂すること。 |
+| **TEST-MD-02** | 見出し重複 | 同一親セクション内に同名の見出し `## 概要` が2回現れる | `symbol` 指定時にフルパス `H1/概要` で判定、一意に特定できない場合は類似候補を提示し終了コード4を返すこと。 |
+| **TEST-MD-03** | 特殊文字スラッシュ | 見出し文字列にスラッシュが含まれる (`## 1/2. 概要/構成`) | パス区切り文字 `/` と誤認しないよう、エスケープ（`\/`）または引用符指定で解決可能であること。 |
+| **TEST-MD-04** | 複数コードブロック | 1つのセクション内に同言語の ```go が3つ存在する | `code_block:go#1`, `code_block:go#2`, `code_block:go#3` として識別し個別に抽出できること。 |
+| **TEST-MD-05** | 無指定コードブロック | 言語指定のない ``` が存在する | `code_block:text` としてフォールバック識別し、抽出可能であること。 |
+| **TEST-MD-06** | 閉じられていないブロック | ` ``` ` が閉じられないままファイル終端に達している | クラッシュせず、ファイル終端（EOF）までをコードブロックとして範囲特定し出力すること。 |
+| **TEST-MD-07** | リスト内コードブロック | リストのインデント内にコードブロックや見出し状文字列が存在する | 見出し構文ノード以外のテキストを誤って見出しシンボルとして抽出しないこと。 |
+| **TEST-MD-08** | 相対リンク解決 | `[設計書](SPECS/design.md#architecture)` 形式のリンク | `resolve-import` で `SPECS/design.md` の `#architecture` 開始行を正しく返却すること。 |
+| **TEST-MD-09** | アンカー・参照検索 | 同ファイル内 `[章2](#section-2)` や見出し参照 | `resolve-import` で同一ファイル内の定義行を返し、`references` で見出し名・アンカーの参照一覧を返却すること。 |
+| **TEST-MD-10** | フロントマター解析 | 先頭に `---` で囲まれたYAML Frontmatterが存在する | 見出し階層と混同せず `frontmatter` 疑似シンボルとして識別・抽出可能であり、見出し検索時に誤検知しないこと。 |
 
 
+
+---
+
+## エラーハンドリング
+
+- **構文解析エラー**: tree-sitterのパース結果に `ERROR` ノードが含まれる場合でも部分的なアウトラインを返しつつ `stderr` に警告を出力する。
+- **ファイルアクセスエラー**: 対象ファイルが存在しない・読み取り権限がない場合、`apperr.FileAccessError` を返し、該当終了コードとともに `stderr` にエラーメッセージを出力する。
+- **シンボル未検出エラー**: `symbol_path` が見つからない場合、ファイル内の実在シンボル名候補（上位5件）をエラーメッセージに含める（F-10）。
+- **データベース不整合エラー**: DBファイル破損・スキーマ不整合時、DBを自動削除・再作成してフルスキャンする。
+- **CLIパラメータエラー**: cobraのフラグバリデーションを利用し、無効な値の指定時には有効な選択肢と正しいコマンド例を `stderr` に出力する。
+
+### 終了コードのタクソノミー（要件H-4）
+
+| 終了コード | 分類 | 対応するGoエラー型/状況 |
+|:---|:---|:---|
+| `0` | 正常終了 | - |
+| `1` | 未分類の内部エラー | 上記いずれにも分類されない予期しない `error` |
+| `2` | CLIパラメータエラー | cobraのフラグバリデーションエラー |
+| `3` | ファイルアクセスエラー | `apperr.FileAccessError`（対象ファイル未検出・読み取り不可・未対応拡張子） |
+| `4` | シンボル未検出エラー | `apperr.SymbolNotFoundError` |
+| `5` | データベース不整合エラー | `apperr.DatabaseCorruptedError`（自動修復後も解消しない致命的な状態） |
+
+---
+
+## 🔮 将来機能拡張の設計方針 (Backlog)
+
+### F-13: 対応言語・拡張子一覧提示（セルフインスペクション強化）
+- `cmd/ast-digger/agentcontext.go`: `agent-context` コマンドの出力JSONトップレベルに、以下のメタデータフィールドを追加する。
+  ```json
+  {
+    "schema_version": "1.0",
+    "cli_name": "ast-digger",
+    "supported_languages": ["python", "typescript", "golang", "java", "javascript"],
+    "supported_extensions": [".py", ".ts", ".tsx", ".go", ".java", ".js", ".jsx"],
+    "commands": { ... }
+  }
+  ```
+- `cmd/ast-digger/main.go`: ルートコマンドおよび全サブコマンドの `--help` 説明文に対応言語一覧テキストを追加する。
+
+### F-14: 依存コード自動追跡 (`--follow-imports`)
+- `cmd/ast-digger/main.go`: `symbol` サブコマンドに `--follow-imports` (bool) オプションを追加する。
+- `internal/outline/outline.go`: `ExtractSymbol` の抽出結果に対し、インポート文を走査し `ResolveImports` を連鎖的に呼び出して定義先コード本文を一括取得する。
+- 循環参照防止のため訪問済みマップ（`visitedMap`）を保持し、再帰探索時の安全性を確保する。
+
+---
+
+## 📊 SQL・CTE構造解析 (Snowflake Dialect) の設計詳細
+
+### 1. ASTノード走査とシンボルマッピング
+
+Snowflake/ANSI SQLを解析する `SqlParser`（`internal/parser/sql.go`）は、以下のASTノードを走査し、`SymbolData` にマッピングする。
+
+| ASTノード種別 | 検出要素 | SymbolData.Kind | SymbolData.Name | 親シンボル (Parent) |
+|:---|:---|:---|:---|:---|
+| `common_table_expression` | WITH句内のCTE | `"cte"` | CTE識別子名（例: `cleaned_orders`） | `nil` |
+| `subquery` (名前なし) | WHERE/FROM/SELECT内のサブクエリ | `"subquery"` | `subquery[0]`, `subquery[1]`（出現順添字） | 親CTE名またはステートメント |
+| `subquery` (エイリアス付き) | `FROM (SELECT ...) AS t` | `"subquery"` | `t`（エイリアス名）および `subquery[i]` | 親CTE名またはステートメント |
+| `insert_statement` / `create_table_statement` / `merge_statement` | 最終更新ステートメント | `"statement"` | 対象テーブル名（例: `marts.daily_sales`） | `nil` |
+| `select_statement` (トップレベル) | メインクエリ | `"statement"` | `"main_query"` | `nil` |
+
+### 2. データフロー（DAG）依存関係の自動構築 (`depends_on`)
+
+- 各CTEブロック内部を走査し、`table_reference` ノードを抽出する。
+- 参照されている名前が同SQLファイル内の他のCTE名と一致する場合は **「上流CTE依存」**、一致しない場合は **「実テーブル/ソース依存」** として分類する。
+- `SymbolData` のメタデータに依存シンボル一覧（`depends_on: []string`）を記録する。
+- **Snowflake固有構文への配慮**:
+  - `LATERAL FLATTEN(input => parse_json(col))` のようなテーブル関数呼び出しを検知してもパニックせず、親テーブル参照を正しく抽出する。
+  - `MERGE INTO <target> USING <source_cte_or_table> ON ...` におけるソースとターゲットの両方をステートメントの入出力として認識する。
+  - `QUALIFY` 句や `PIVOT`/`UNPIVOT` 句を含むCTEでも構文解析を正常に完了させる。
+
+### 3. スケルトンコード生成 (`GenerateSkeleton`)
+
+数千行のSQLを数十行に圧縮するため、以下のルールでスケルトンを再構成する：
+```sql
+-- CTE Outline (3,420 lines -> 35 lines, Snowflake Dialect)
+WITH
+  raw_orders AS (L15-L65, depends_on: [source_db.orders]) /* ... */,
+  cleaned_orders AS (L66-L140, depends_on: [raw_orders]) /* ... */,
+  user_master AS (L141-L210, depends_on: [source_db.users]) /* ... */,
+  joined_sales AS (L211-L450, depends_on: [cleaned_orders, user_master]) /* ... */,
+  tax_calculation AS (L451-L890, depends_on: [joined_sales]) /* ... */
+
+INSERT INTO marts.daily_sales_report
+SELECT user_id, order_count, total_amount /* ... */
+FROM tax_calculation;
+```
+- `--json` モードでは、各CTEの `name`, `start_line`, `end_line`, `depends_on`, `subqueries`（添字と行範囲）を階層構造JSONで出力する。
+
+### 4. サブクエリ添字パスの解決アルゴリズム (`locate` / `symbol`)
+
+- シンボルパスはスラッシュ区切りの階層パスおよび通し番号をサポートする：
+  1. `cte_orders/subquery[0]` または `cte_orders/subquery#0`: `cte_orders` 内の0番目のサブクエリ。
+  2. `cte_orders/sub_items`: エイリアス `sub_items` を持つサブクエリ。
+  3. `subquery[0]`: ファイル全体またはメインステートメント内の通し番号サブクエリ。
+- パス解決時、角括弧 `[...]` とシャープ `#...` の両方を等価として正規化パースし、シェルエスケープの差異を吸収する。
+
+### 5. 上流CTE依存自動追跡 (`symbol --follow-imports`)
+
+- リファクタリング対象のCTE（例: `tax_calculation`）が指定された場合：
+  1. 対象CTEの `depends_on` から上流CTE名（例: `joined_sales`）を再帰的に走査。
+  2. 訪問済みマップ（`visitedMap`）により、自己参照や循環参照を安全にガード。
+  3. トポロジカルソート順（最上流 ➔ 目的のCTE）でCTEブロックを抽出し、以下の形式で連結出力する：
+     ```sql
+     --- Dependency: raw_orders (L15-L65) ---
+     raw_orders AS ( ... )
+     
+     --- Dependency: cleaned_orders (L66-L140) ---
+     cleaned_orders AS ( ... )
+     
+     --- Target: tax_calculation (L451-L890) ---
+     tax_calculation AS ( ... )
+     ```
+
+### 6. Icepick連携コード探索アーキテクチャ (Deterministic Optimization Loop)
+
+AIエージェントが `icepick`（Snowflake AST Query Optimizer & Linter）と連携して、安全かつ最小トークンでSQLリファクタリングを実行するための探索アーキテクチャを定義する。
+
+```mermaid
+sequenceDiagram
+    autonumber
+    actor Agent as AIエージェント
+    participant Icepick as icepick (Linter/Optimizer)
+    participant Digger as ast-digger (AST Explorer)
+    participant File as 対象SQLファイル (3,000行)
+
+    Agent->>Icepick: icepick diag pipeline.sql --json
+    Icepick-->>Agent: 処方箋 (SNOW-005 重複スキャン / SNOW-002 相関サブクエリ)
+    
+    rect rgb(240, 248, 255)
+        note over Agent, Digger: ast-digger による外科手術的探索 (コンテキスト節約)
+        Agent->>Digger: references raw_events (重複テーブルの参照箇所を特定)
+        Digger-->>Agent: 各CTEの参照行番号一覧 (L45, L180, L620)
+        Agent->>Digger: symbol pipeline.sql cte_orders (対象CTE本体のみ抽出)
+        Digger-->>Agent: 該当CTEコード (数十行)
+        Agent->>Digger: locate pipeline.sql "cte_orders/subquery[0]" (置換範囲特定)
+        Digger-->>Agent: 置換行 L120-L145, 挿入行 L80
+    end
+
+    Agent->>File: ピンポイント編集 (新規CTE追加 & サブクエリ参照置換)
+    Agent->>Digger: outline pipeline.sql (DAGと骨格の再検証)
+    Digger-->>Agent: 整理されたCTEスケルトンツリー
+    Agent->>Icepick: icepick verify original.sql optimized.sql -o verify.sql
+    Icepick-->>Agent: 双方向EXCEPT等価性検証SQL (差分0行を保証)
+```
+
+#### 4大連携探索シナリオの設計
+1. **重複テーブルスキャンの共通CTE集約 (SNOW-005 DuplicateTableScanRule)**:
+   - `references <table_name>` で同一ファイルを走査し、同一テーブルをスキャンしているCTE群を網羅。
+   - `symbol` で各CTEの抽出を行い、共通フィルタ条件を算出後、上流CTE直前へ `locate` して共通CTEを集約挿入。
+2. **相関サブクエリの独立CTE外出し・JOIN化 (SNOW-002 CorrelatedSubqueryRule)**:
+   - `outline` で `subquery[i]` を検出後、`symbol "cte/subquery[i]"` で本文取得。
+   - `locate` でサブクエリの置換範囲を特定し、集計CTEとして外出しして `LEFT JOIN` 化。
+3. **ネストされた派生テーブルの最上位CTE外出し (SNOW-007 NestedSubqueryRule)**:
+   - インライン派生テーブルを `subquery[0]` 添字で指定し、`symbol` と `locate` でピンポイント外出し。
+4. **リファクタリング後の下流影響確認と等価性検証**:
+   - 編集後に `references <new_cte>` で下流CTEとの接続を確認し、`icepick verify` でSnowflake上での実行等価性を担保。
+
+### 7. ビュー定義（CREATE VIEW / MATERIALIZED VIEW）シンボル認識とWarning重複抑止設計
+
+現場の Snowflake DWH 環境において多用されるビュー定義スクリプトおよびストアドプロシージャを安全・快適に解析するための拡張設計。
+
+#### 1. ビュー定義（CREATE VIEW）のシンボル抽出設計
+- **AST走査ロジックの拡張 (`scanStmt`)**:
+  - `create_view`, `create_view_statement` ノードを明示的に探索対象に追加。
+  - 内包される `select_statement` がデフォルトの `main_query` として誤認される前に、親の `CREATE VIEW` 文を優先して捕捉。
+- **Snowflake 多様な DDL 構文に対応する正規表現フォールバック**:
+  - `CREATE [OR REPLACE] [SECURE | MATERIALIZED | TRANSIENT | RECURSIVE] VIEW <view_name>`
+  - `CREATE [OR REPLACE] [TRANSIENT | DYNAMIC] TABLE <table_name>`
+  - これらからビュー名/テーブル名を抽出し、`Kind: "statement"`（名称: ビュー名）としてシンボルを登録。
+- **`ExtractSymbol` への統合**:
+  - `ast-digger symbol view.sql <view_name>` または `ast-digger locate view.sql <view_name>` により、ビュー定義全体（`CREATE VIEW ... AS SELECT ...`）のコード本文および行範囲を直接ピンポイント抽出可能にする。
+
+#### 2. 構文警告（Warning）の重複抑止機構
+- **課題**: Snowflake 独自構文を含むクエリに対して `--follow-imports` 等で同一ファイルを再パースした際、同一の警告メッセージが何十行もコンソールに出力され、出力が埋もれる。
+- **解決設計**:
+  - `SqlParser` にスレッドセーフな警告済みファイル記録マップ（`warnedFiles sync.Map`）を保持。
+  - 同一ファイルパスに対する `Warning: Syntax errors or dialect extensions detected in ...` は、CLIプロセス実行内で最初の1回のみ標準エラー出力（`os.Stderr`）へ出力し、2回目以降は安全にサイレント化する。

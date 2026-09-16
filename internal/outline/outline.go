@@ -42,6 +42,7 @@ var extToLang = map[string]string{
 	".js":       "javascript",
 	".jsx":      "javascript",
 	".rs":       "rust",
+	".sql":      "sql",
 	".md":       "markdown",
 	".markdown": "markdown",
 }
@@ -88,6 +89,8 @@ func (o *Outliner) getParser(filePath string) (parser.Parser, error) {
 		return parser.NewJavaScriptParser(), nil
 	case ".rs":
 		return parser.NewRustParser(), nil
+	case ".sql":
+		return parser.NewSqlParser(), nil
 	case ".md", ".markdown":
 		return parser.NewMarkdownParser(), nil
 	}

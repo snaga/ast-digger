@@ -35,6 +35,7 @@ AST-Digger は、AIエージェントが大規模なコードベースを効率�
 | Java | `.java` |
 | JavaScript | `.js`, `.jsx` |
 | Rust | `.rs` |
+| SQL | `.sql` |
 | Markdown | `.md`, `.markdown` |
 
 ---
@@ -293,11 +294,28 @@ ast-digger outline <file_path> [--json] [--no-truncate]
 # Rust
 ./ast-digger outline testdata/rust/sample.rs
 
+# SQL (Snowflake SQL / ANSI SQL)
+./ast-digger outline testdata/sql/snowflake_sample.sql
+
 # Markdown
 ./ast-digger outline testdata/markdown/sample.md
 
 # JSON 出力（シンボル構造データの配列）
 ./ast-digger outline testdata/python/importproj/mathutils.py --json
+```
+
+Snowflake SQL対象ファイルの出力例（CTE DAGスケルトン）:
+
+```sql
+WITH
+raw_orders AS (L6-L27, depends_on: [source_db.lake.orders, source_db.lake.blacklisted_users]) /* ... */,
+cleaned_orders AS (L29-L48, depends_on: [raw_orders]) /* ... */,
+user_master AS (L50-L62, depends_on: [source_db.lake.users]) /* ... */,
+joined_sales AS (L64-L86, depends_on: [cleaned_orders, user_master, source_db.lake.tier_bonuses]) /* ... */,
+tax_calculation AS (L88-L102, depends_on: [joined_sales]) /* ... */
+
+INSERT INTO marts.daily_sales_summary (
+...
 ```
 
 Go対象ファイルの出力例:
@@ -359,6 +377,15 @@ ast-digger symbol <file_path> <symbol_path> [--json] [--no-truncate]
 # メソッド/関数を抽出（Rust）
 ./ast-digger symbol testdata/rust/sample.rs Greeter.greet
 
+# CTEブロックを抽出（SQL）
+./ast-digger symbol testdata/sql/snowflake_sample.sql cleaned_orders
+
+# サブクエリを添字またはエイリアスで抽出（SQL）
+./ast-digger symbol testdata/sql/snowflake_sample.sql "joined_sales/sub_items"
+
+# 上流CTE依存コードを一括自動追跡（SQL: --follow-imports）
+./ast-digger symbol testdata/sql/snowflake_sample.sql tax_calculation --follow-imports
+
 # セクション/コードブロックを抽出（Markdown）
 ./ast-digger symbol testdata/markdown/sample.md "Section 1"
 
@@ -412,6 +439,13 @@ ast-digger locate <file_path> <symbol_path> [--json]
 
 ./ast-digger locate testdata/python/sample.py Greeter.shout --json
 # → {"file": "testdata/python/sample.py", "symbol": "shout", "start_line": 16, "end_line": 19}
+
+# SQL: CTEおよびサブクエリの行範囲特定
+./ast-digger locate testdata/sql/snowflake_sample.sql cleaned_orders
+# → testdata/sql/snowflake_sample.sql:29-48
+
+./ast-digger locate testdata/sql/snowflake_sample.sql "joined_sales/sub_items"
+# → testdata/sql/snowflake_sample.sql:80-84
 ```
 
 ---
@@ -433,6 +467,12 @@ testdata/python/references/caller_a.py:2: target_func()  # actual reference on t
 testdata/python/references/caller_b.py:6: value = target_func
 ```
 
+Snowflake SQL での重複テーブルスキャン探索（Icepick SNOW-005 ルール連携）の例:
+
+```sh
+./ast-digger references raw_orders --project-root testdata/sql
+```
+
 上限超過時のヒント表示の例:
 
 ```sh
@@ -448,7 +488,7 @@ testdata/python/references_bulk/callers.py:6: bulk_symbol()  # call site 4
 # ... (truncated: 5 of 60 results shown. Use --limit to increase or narrow down using --project-root)
 ```
 
-> **注意（Go/Java対象コード固有の挙動）**: GoおよびJava版パーサーの`FindReferencesInFile`は、定義箇所自体を参照結果から除外しません。そのため、`.go`/`.java`ファイルを対象に`references`を実行すると、呼び出し箇所に加えて定義行も含まれます（Python/TypeScript/JavaScriptの各パーサーは定義箇所を除外します）。
+> **注意（Go/Java対象コード固有の挙動）**: GoおよびJava版パーサーの`FindReferencesInFile`は、定義箇所自体を参照結果から除外しません。そのため、`.go`/`.java`ファイルを対象に`references`を実行すると、呼び出し箇所に加えて定義行も含まれます（Python/TypeScript/JavaScript/Rust/SQLの各パーサーは定義箇所を除外します）。
 
 ---
 
@@ -458,7 +498,7 @@ testdata/python/references_bulk/callers.py:6: bulk_symbol()  # call site 4
 ast-digger resolve-import <file_path> <symbol_name> [--json]
 ```
 
-対象ファイルのインポート文を解析し、指定シンボルの**定義元ファイルと行番号**を解決します。
+対象ファイルのインポート文（またはSQL内のCTE定義）を解析し、指定シンボルの**定義元ファイルと行番号**を解決します。
 
 インポートはカレントディレクトリをプロジェクトルート（Pythonでいう`sys.path[0]`相当）とみなして解決するため、モジュール参照を含むファイルを対象にする場合は、そのファイルが属するプロジェクトルート（例えば`go.mod`やパッケージの起点ディレクトリ）をカレントディレクトリにして実行してください。
 
@@ -488,6 +528,10 @@ cd ../../../testdata/javascript/importproj
 cd ../../../testdata/rust/importproj
 ../../../ast-digger resolve-import main.rs add
 # → utils.rs:1
+
+# SQL（同一ファイル内のCTE定義行番号解決）
+./ast-digger resolve-import testdata/sql/snowflake_sample.sql cleaned_orders
+# → snowflake_sample.sql:29
 
 # Markdown（リンク/アンカーの参照先解決）
 cd ../../../testdata/markdown/references

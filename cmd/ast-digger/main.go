@@ -49,6 +49,7 @@ Supported languages and extensions:
   - Java (.java)
   - JavaScript (.js, .jsx)
   - Rust (.rs)
+  - SQL (.sql)
   - Markdown (.md, .markdown)`,
 		Version:           version,
 		SilenceUsage:      true,
@@ -221,7 +222,7 @@ func newSymbolCmd() *cobra.Command {
 					if dep.Code != nil {
 						depCode = *dep.Code
 					}
-					b.WriteString(fmt.Sprintf("\n\n--- Dependency: %s::%s ---\n%s", depPath, dep.Name, depCode))
+					fmt.Fprintf(&b, "\n\n--- Dependency: %s::%s ---\n%s", depPath, dep.Name, depCode)
 				}
 				code = b.String()
 			}

@@ -104,6 +104,7 @@ func TestRootHelpCmd_ContainsSupportedLanguages(t *testing.T) {
 		"Java (.java)",
 		"JavaScript (.js, .jsx)",
 		"Rust (.rs)",
+		"SQL (.sql)",
 		"Markdown (.md, .markdown)",
 	}
 
@@ -276,6 +277,7 @@ const (
 	jsxSampleFile      = "../../testdata/javascript/sample.jsx"
 	rustSampleFile     = "../../testdata/rust/sample.rs"
 	markdownSampleFile = "../../testdata/markdown/sample.md"
+	sqlSampleFile      = "../../testdata/sql/snowflake_sample.sql"
 )
 
 func TestOutlineCmd_Markdown_Text(t *testing.T) {
@@ -501,6 +503,191 @@ func TestReferencesCmd_Rust(t *testing.T) {
 	}
 	if !strings.Contains(res.Stdout, "caller.rs") {
 		t.Errorf("stdout does not contain reference in caller.rs:\n%s", res.Stdout)
+	}
+}
+
+func TestOutlineCmd_SQL_Text(t *testing.T) {
+	res := runCLI(t, "outline", sqlSampleFile)
+
+	if res.ExitCode != apperr.ExitOK {
+		t.Fatalf("ExitCode = %d, want 0; stderr=%q", res.ExitCode, res.Stderr)
+	}
+	for _, want := range []string{
+		"WITH",
+		"raw_orders AS",
+		"cleaned_orders AS",
+		"/* ... */",
+		"INSERT INTO marts.daily_sales_summary",
+	} {
+		if !strings.Contains(res.Stdout, want) {
+			t.Errorf("stdout does not contain %q:\n%s", want, res.Stdout)
+		}
+	}
+}
+
+func TestOutlineCmd_SQL_JSON(t *testing.T) {
+	res := runCLI(t, "outline", sqlSampleFile, "--json")
+
+	if res.ExitCode != apperr.ExitOK {
+		t.Fatalf("ExitCode = %d, want 0; stderr=%q", res.ExitCode, res.Stderr)
+	}
+
+	var symbols []map[string]any
+	if err := json.Unmarshal([]byte(res.Stdout), &symbols); err != nil {
+		t.Fatalf("stdout is not a valid JSON array: %v\nstdout=%s", err, res.Stdout)
+	}
+
+	var foundCte, foundSubquery bool
+	for _, s := range symbols {
+		if s["name"] == "cleaned_orders" && s["kind"] == "cte" {
+			foundCte = true
+		}
+		if s["name"] == "subquery[0]" && s["kind"] == "subquery" {
+			foundSubquery = true
+		}
+	}
+	if !foundCte {
+		t.Errorf("expected cleaned_orders CTE in JSON output, got: %s", res.Stdout)
+	}
+	if !foundSubquery {
+		t.Errorf("expected subquery in JSON output, got: %s", res.Stdout)
+	}
+}
+
+func TestSymbolCmd_SQL_Text(t *testing.T) {
+	// 1. CTE extraction
+	res := runCLI(t, "symbol", sqlSampleFile, "cleaned_orders")
+	if res.ExitCode != apperr.ExitOK {
+		t.Fatalf("ExitCode = %d, want 0; stderr=%q", res.ExitCode, res.Stderr)
+	}
+	if !strings.Contains(res.Stdout, "cleaned_orders AS") {
+		t.Errorf("stdout does not contain %q:\n%s", "cleaned_orders AS", res.Stdout)
+	}
+	if !strings.Contains(res.Stdout, "CONVERT_TIMEZONE") {
+		t.Errorf("stdout does not contain CONVERT_TIMEZONE:\n%s", res.Stdout)
+	}
+
+	// 2. Subquery index/alias extraction
+	resSub := runCLI(t, "symbol", sqlSampleFile, "joined_sales/sub_items")
+	if resSub.ExitCode != apperr.ExitOK {
+		t.Fatalf("ExitCode = %d, want 0; stderr=%q", resSub.ExitCode, resSub.Stderr)
+	}
+	if !strings.Contains(resSub.Stdout, "cleaned_orders") {
+		t.Errorf("stdout does not contain 'cleaned_orders':\n%s", resSub.Stdout)
+	}
+}
+
+func TestSymbolCmd_SQL_JSON(t *testing.T) {
+	res := runCLI(t, "symbol", sqlSampleFile, "cleaned_orders", "--json")
+
+	if res.ExitCode != apperr.ExitOK {
+		t.Fatalf("ExitCode = %d, want 0; stderr=%q", res.ExitCode, res.Stderr)
+	}
+
+	var payload map[string]any
+	if err := json.Unmarshal([]byte(res.Stdout), &payload); err != nil {
+		t.Fatalf("stdout is not valid JSON: %v\nstdout=%s", err, res.Stdout)
+	}
+	if payload["name"] != "cleaned_orders" {
+		t.Errorf(`payload["name"] = %v, want "cleaned_orders"`, payload["name"])
+	}
+	if payload["kind"] != "cte" {
+		t.Errorf(`payload["kind"] = %v, want "cte"`, payload["kind"])
+	}
+	sig, _ := payload["signature"].(string)
+	if !strings.Contains(sig, "raw_orders") {
+		t.Errorf(`payload["signature"] = %q, want it to contain "raw_orders"`, sig)
+	}
+}
+
+func TestLocateCmd_SQL(t *testing.T) {
+	// CTE locate
+	res := runCLI(t, "locate", sqlSampleFile, "cleaned_orders")
+	if res.ExitCode != apperr.ExitOK {
+		t.Fatalf("ExitCode = %d, want 0; stderr=%q", res.ExitCode, res.Stderr)
+	}
+	if !strings.Contains(res.Stdout, "snowflake_sample.sql:29-48") {
+		t.Errorf("stdout = %q, want it to contain snowflake_sample.sql:29-48", res.Stdout)
+	}
+
+	// Subquery locate
+	resSub := runCLI(t, "locate", sqlSampleFile, "joined_sales/sub_items")
+	if resSub.ExitCode != apperr.ExitOK {
+		t.Fatalf("ExitCode = %d, want 0; stderr=%q", resSub.ExitCode, resSub.Stderr)
+	}
+	if !strings.Contains(resSub.Stdout, "snowflake_sample.sql:80-84") {
+		t.Errorf("stdout = %q, want it to contain snowflake_sample.sql:80-84", resSub.Stdout)
+	}
+}
+
+func TestResolveImportCmd_SQL(t *testing.T) {
+	res := runCLI(t, "resolve-import", sqlSampleFile, "cleaned_orders")
+	if res.ExitCode != apperr.ExitOK {
+		t.Fatalf("ExitCode = %d, want 0; stderr=%q", res.ExitCode, res.Stderr)
+	}
+	if !strings.Contains(res.Stdout, "snowflake_sample.sql:29") {
+		t.Errorf("stdout = %q, want it to contain snowflake_sample.sql:29", res.Stdout)
+	}
+}
+
+func TestReferencesCmd_SQL(t *testing.T) {
+	orig, _ := os.Getwd()
+	absProjDir, _ := filepath.Abs("../../testdata/mixed/references")
+	_ = os.Chdir(absProjDir)
+	t.Cleanup(func() { _ = os.Chdir(orig) })
+
+	res := runCLI(t, "references", "helperFn")
+	if res.ExitCode != apperr.ExitOK {
+		t.Fatalf("ExitCode = %d, want 0; stderr=%q", res.ExitCode, res.Stderr)
+	}
+	if !strings.Contains(res.Stdout, "caller.sql") {
+		t.Errorf("stdout does not contain reference in caller.sql:\n%s", res.Stdout)
+	}
+}
+
+func TestSymbolCmd_SQL_FollowImports(t *testing.T) {
+	// 1. Text mode with --no-truncate
+	resText := runCLI(t, "symbol", sqlSampleFile, "tax_calculation", "--follow-imports", "--no-truncate")
+	if resText.ExitCode != apperr.ExitOK {
+		t.Fatalf("ExitCode = %d, want 0; stderr=%q", resText.ExitCode, resText.Stderr)
+	}
+	for _, want := range []string{
+		"tax_calculation AS",
+		"--- Dependency:",
+		"joined_sales",
+		"cleaned_orders",
+		"user_master",
+		"raw_orders",
+	} {
+		if !strings.Contains(resText.Stdout, want) {
+			t.Errorf("stdout does not contain %q:\n%s", want, resText.Stdout)
+		}
+	}
+
+	// 2. JSON mode
+	resJSON := runCLI(t, "symbol", sqlSampleFile, "tax_calculation", "--follow-imports", "--json")
+	if resJSON.ExitCode != apperr.ExitOK {
+		t.Fatalf("ExitCode = %d, want 0; stderr=%q", resJSON.ExitCode, resJSON.Stderr)
+	}
+
+	var payload struct {
+		Name         string         `json:"name"`
+		Dependencies []symbolResult `json:"dependencies"`
+	}
+	if err := json.Unmarshal([]byte(resJSON.Stdout), &payload); err != nil {
+		t.Fatalf("failed to parse JSON: %v\nstdout=%s", err, resJSON.Stdout)
+	}
+	if payload.Name != "tax_calculation" {
+		t.Errorf("payload.Name = %q, want tax_calculation", payload.Name)
+	}
+	depNames := make(map[string]bool)
+	for _, dep := range payload.Dependencies {
+		depNames[dep.Name] = true
+	}
+	for _, want := range []string{"joined_sales", "cleaned_orders", "user_master", "raw_orders"} {
+		if !depNames[want] {
+			t.Errorf("expected dependency %q in dependencies: %+v", want, payload.Dependencies)
+		}
 	}
 }
 
@@ -1948,6 +2135,18 @@ func TestSymbolCmd_FollowImports_MultiLanguage(t *testing.T) {
 	writeFile(t, filepath.Join(tmp, "rs", "dep.rs"), "pub fn helper() -> i32 { 42 }\n")
 	writeFile(t, filepath.Join(tmp, "rs", "main.rs"), "mod dep;\nuse dep::helper;\npub fn main_fn() -> i32 { helper() }\n")
 
+	// SQL
+	writeFile(t, filepath.Join(tmp, "sql", "query.sql"), strings.Join([]string{
+		"WITH helper AS (",
+		"    SELECT 42 AS val",
+		"),",
+		"main_fn AS (",
+		"    SELECT val FROM helper",
+		")",
+		"SELECT * FROM main_fn;",
+		"",
+	}, "\n"))
+
 	tests := []struct {
 		lang       string
 		dir        string
@@ -1961,6 +2160,7 @@ func TestSymbolCmd_FollowImports_MultiLanguage(t *testing.T) {
 		{lang: "java", dir: filepath.Join(tmp, "java"), filePath: filepath.Join("com", "example", "Main.java"), symbolName: "Main.mainFn", depName: "Dep"},
 		{lang: "javascript", dir: filepath.Join(tmp, "js"), filePath: "main.js", symbolName: "main_fn", depName: "helper"},
 		{lang: "rust", dir: filepath.Join(tmp, "rs"), filePath: "main.rs", symbolName: "main_fn", depName: "helper"},
+		{lang: "sql", dir: filepath.Join(tmp, "sql"), filePath: "query.sql", symbolName: "main_fn", depName: "helper"},
 	}
 
 	orig, _ := os.Getwd()

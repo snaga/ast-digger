@@ -414,7 +414,11 @@ func TestTypeScriptParser_ExtractSymbol(t *testing.T) {
 			if sym.EndLine != tt.wantEndLine {
 				t.Errorf("EndLine = %d, want %d", sym.EndLine, tt.wantEndLine)
 			}
-			if sym.Code == nil || *sym.Code != tt.wantCode {
+			var gotCode string
+			if sym.Code != nil {
+				gotCode = strings.ReplaceAll(*sym.Code, "\r\n", "\n")
+			}
+			if gotCode != tt.wantCode {
 				t.Errorf("Code = %q, want %q", deref(sym.Code), tt.wantCode)
 			}
 			if sym.FilePath == nil || *sym.FilePath != tsSampleFile {
@@ -577,7 +581,7 @@ func TestTypeScriptParser_GenerateSkeleton(t *testing.T) {
 		``,
 	}, "\n")
 
-	if got != want {
+	if strings.ReplaceAll(got, "\r\n", "\n") != want {
 		t.Errorf("GenerateSkeleton =\n%s\nwant\n%s", got, want)
 	}
 }
