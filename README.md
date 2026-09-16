@@ -618,6 +618,21 @@ ast-digger agent-context
 - **2回目以降**: `mtime` と `SHA-256 ハッシュ`で変更を検知し、変更ファイルのみ再スキャン
 - `node_modules`, `.git`, `.venv`, `__pycache__` は自動的に除外
 
+## 📜 更新履歴
+
+### Unreleased (feat-sql)
+
+- **Snowflake SQL 対応**:
+  - `tree-sitter-sql` を導入し、Snowflake 方言（`QUALIFY`、`MERGE INTO`、`LATERAL FLATTEN` 等）に耐性のある SQL パーサーを実装。
+  - CTE（`WITH cte AS`）およびビュー（`CREATE [SECURE|MATERIALIZED] VIEW`）、動的テーブル（`CREATE DYNAMIC TABLE`）のシンボル抽出と階層把握に対応。
+  - サブクエリ添字（`cte/subquery[0]`）およびエイリアス名（`cte/alias`）によるピンポイント抽出に対応（CTE 外出しリファクタリング支援）。
+  - テーブル・上流 CTE のデータフロー依存関係（`depends_on`）の抽出と、数千行のクエリを圧縮するスケルトン出力（`-- CTE Outline`）をサポート。
+  - 上流 CTE 依存自動追跡（`--follow-imports`）および重複テーブルスキャン・シンボル参照探索（`references`）を実装（`icepick` 連携対応）。
+  - 同一ファイルに対する方言警告の重複出力を抑制。
+- **CLI / スキーマ統合**:
+  - `agent-context` に SQL（`.sql`）を登録（計7言語、9拡張子に対応）。
+  - 全 CLI コマンドの SQL 統合テストを追加。
+
 ---
 
 ## ライセンス
