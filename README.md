@@ -620,7 +620,7 @@ ast-digger agent-context
 
 ## 📜 更新履歴
 
-### Unreleased (feat-sql)
+### 0.3.0 (2026-09-21)
 
 - **Snowflake SQL 対応**:
   - `tree-sitter-sql` を導入し、Snowflake 方言（`QUALIFY`、`MERGE INTO`、`LATERAL FLATTEN` 等）に耐性のある SQL パーサーを実装。
