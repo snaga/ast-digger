@@ -134,6 +134,10 @@ func (stubParser) ParseFile(filePath string) ([]SymbolData, error) {
 	return nil, nil
 }
 
+func (stubParser) ParseBytes(source []byte, filePath string) ([]SymbolData, error) {
+	return nil, nil
+}
+
 func (stubParser) ExtractSymbol(filePath, symbolPath string) (SymbolData, error) {
 	return SymbolData{}, nil
 }

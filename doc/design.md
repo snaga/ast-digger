@@ -41,6 +41,7 @@
 | SQL構造解析 | F-17 | サブクエリ添字抽出とCTE依存追跡 | `subquery[0]` による名前なしサブクエリの特定・抽出、および `--follow-imports` による上流CTE依存コードの一括抽出を行う。 | 要件 L-2, L-3, L-4 |
 | SQL構造解析 | F-18 | Icepick連携最適化リファクタリング探索 | `icepick` の診断結果（SNOW-002, SNOW-005, SNOW-007等）に基づく重複スキャン集約、相関サブクエリJOIN化、CTE外出しのピンポイント外科手術的探索を行う。 | 要件 L-5, L-6 |
 | SQL構造解析 | F-19 | ビュー定義（CREATE VIEW）認識と警告抑止 | `CREATE [OR REPLACE] [SECURE | MATERIALIZED] VIEW` や `CREATE DYNAMIC TABLE` から名称を抽出してシンボル登録し、同一ファイルの警告連打を抑止する。 | 要件 L-7 |
+| 変更インパクト解析 | F-20 | 意味的変更インパクト解析と意図・ドキュメント充足度評価 | Git差分とAST解析を組み合わせ、構文ステートメント増分、制御複雑度、シンボルDocstring充足度、外部ドキュメント同期アドバイザリーを構造化出力する。 | 要件 M-1, M-2, M-3, M-4 |
 
 
 ---
@@ -270,6 +271,17 @@ sequenceDiagram
 - **入力**: `file_path`（string, 必須）, `symbol_path`（string, 必須）
 - **処理概要**: 指定されたシンボルの定義位置（ファイル、開始行、終了行）を解決する。コードを読み込まないため`symbol`より軽量。
 - **出力**: `file_path:start_line-end_line`形式の文字列、または`--json`指定時は`{"file": ..., "symbol": ..., "start_line": ..., "end_line": ...}`。
+##### サブコマンド9: `change-impact`
+- **使用例**: `ast-digger change-impact [--base <commit>] [--max-statements <N>] [--require-doc <exported|all|none>] [--fail-on-missing-doc] [--json]`
+- **入力**: 
+  - `--base`（string, 任意, デフォルト `HEAD`: 未コミット変更の比較対象。コミットハッシュやブランチ名指定可）
+  - `--max-statements`（integer, 任意, デフォルト無制限: 許容する最大ステートメント数）
+  - `--require-doc`（string, 任意, デフォルト `exported`: ドキュメント必須基準。`exported`, `all`, `none`）
+  - `--fail-on-missing-doc`（boolean, 任意, デフォルト `false`: ドキュメント欠落時に非ゼロ終了）
+  - `--json`（boolean, 任意, デフォルト `false`: 構造化JSON出力）
+- **処理概要**: Git差分を特定し、各言語パーサーを用いてASTレベルで構文ステートメント（代入、式、呼び出し、宣言）の追加・削除数、制御複雑度の変化、影響を受けたシンボル一覧を解析。シンボル直前のDocstring有無を監査し、変更規模やモジュール横断度合いに応じたコード外ドキュメント（モジュール概要、仕様書、設計ノート等）作成・更新アドバイザリーを導出する。
+- **出力**: 人間・エージェント向けの視覚的サマリーテキスト、または自己監査用の構造化JSON。
+
 
 ##### 既知の挙動・設計のポイント
 - `directory`の`--recursive`/`--no-recursive`は、独立した2つのboolフラグとして実装されている。
@@ -510,7 +522,7 @@ classDiagram
 |:---|:---|:---|
 | `0` | 正常終了 | - |
 | `1` | 未分類の内部エラー | 上記いずれにも分類されない予期しない `error` |
-| `2` | CLIパラメータエラー | cobraのフラグバリデーションエラー |
+| `2` | CLIパラメータ/検証エラー | cobraのフラグバリデーションエラー、または change-impact のガードレール検証エラー（--max-statements 超過、--fail-on-missing-doc 違反等） |
 | `3` | ファイルアクセスエラー | `apperr.FileAccessError`（対象ファイル未検出・読み取り不可・未対応拡張子） |
 | `4` | シンボル未検出エラー | `apperr.SymbolNotFoundError` |
 | `5` | データベース不整合エラー | `apperr.DatabaseCorruptedError`（自動修復後も解消しない致命的な状態） |
@@ -865,3 +877,132 @@ sequenceDiagram
 - **解決設計**:
   - `SqlParser` にスレッドセーフな警告済みファイル記録マップ（`warnedFiles sync.Map`）を保持。
   - 同一ファイルパスに対する `Warning: Syntax errors or dialect extensions detected in ...` は、CLIプロセス実行内で最初の1回のみ標準エラー出力（`os.Stderr`）へ出力し、2回目以降は安全にサイレント化する。
+
+### 8. 変更インパクト解析と意図・ドキュメント充足度評価設計 (Semantic Change Impact & Intent Verification)
+
+#### 1. アーキテクチャと全体フロー
+
+エージェントがタスク実装後、コミット前に `change-impact` を実行して自己監査・ガードレール判定を行うシーケンス：
+
+```mermaid
+sequenceDiagram
+    autonumber
+    actor Agent as コーディングエージェント / 人間
+    participant CLI as ast-digger change-impact
+    participant Git as Git Client (go-git / CLI)
+    participant Outliner as outline.Outliner
+    participant Parser as parser.Parser (Tree-sitter)
+
+    Agent->>CLI: change-impact --base HEAD [--json]
+    CLI->>Git: 差分ファイル一覧および Hunk 取得
+    Git-->>CLI: 変更ファイルパス・変更行番号範囲
+    loop 変更ファイルごと (Go, TS, Py, etc.)
+        CLI->>Parser: 変更前コード・変更後コードの AST 解析
+        Parser-->>CLI: Statements 差分 & 制御複雑度 (Cyclomatic Delta)
+        CLI->>Outliner: 変更行とシンボルのマッピング (Symbol Identification)
+        Outliner-->>CLI: 影響シンボル (Added, Modified) & 直前 Docstring 有無
+    end
+    CLI->>CLI: ドキュメント監査 & 外部ドキュメント更新アドバイザリー判定
+    CLI-->>Agent: 構造化レポート (Text / JSON)
+    opt ガードレール違反 (Statement上限超過 または 必須Doc欠落)
+        CLI-->>Agent: 終了コード 2 (Validation Error)
+    end
+```
+
+#### 2. 構文ステートメント・複雑度差分解析ロジック (IPO)
+- **入力 (Input)**:
+  - 変更前ソースコード `source_old` および 変更後ソースコード `source_new`
+  - Git diff の Hunk（変更行番号リスト）
+- **処理 (Processing)**:
+  1. `Parser` が Tree-sitter AST の `statement` / `declaration` ノード（代入文、関数呼び出し、リターン文、変数宣言等）を走査。
+  2. 変更行番号に含まれるステートメントノードの追加数（`statements_added`）および削除数（`statements_deleted`）をカウント（空行・コメント・波括弧だけの行は除外）。
+  3. 分岐構文（`if_statement`, `switch_statement`, `for_statement`, `catch_clause` 等）の増減から制御フロー複雑度差分（`complexity_delta`）を算出。
+  4. 変更規模の算出:
+     - `MINOR`: ステートメント変更数 < 20 かつ 複雑度増分 <= 2
+     - `MODERATE`: ステートメント変更数 20〜60
+     - `SIGNIFICANT`: ステートメント変更数 61〜150
+     - `EXTREME`: ステートメント変更数 > 150
+- **出力 (Output)**:
+  - `StatementDelta { Added: int, Deleted: int }`
+  - `ComplexityDelta: int`
+  - `ImpactLevel: "MINOR" | "MODERATE" | "SIGNIFICANT" | "EXTREME"`
+
+#### 3. シンボル特定と Docstring 監査ロジック
+- **処理 (Processing)**:
+  1. 変更行番号がどの `SymbolData`（クラス、関数、メソッド、構造体等）の行範囲に含まれるかを特定。
+  2. 変更前ASTに存在せず変更後ASTにのみ存在するシンボルを `change_type: "added"`、双方に存在するものを `"modified"`、削除されたものを `"deleted"` と判定。
+  3. シンボルの直前コメントノード（GoDoc, JSDoc, Python docstring, Javadoc, Rust `///`）を `find*DocComment` でチェックし、`has_docstring: bool` を判定。
+  4. `--require-doc` オプションに基づき、公開シンボル（`visibility: "public"`）または全シンボルの Docstring 充足度を検証。
+
+#### 4. 外部ドキュメント同期アドバイザリー導出ロジック
+特定のファイル配置やドキュメントツールの存在を前提とせず、変更の影響範囲に応じて外部ドキュメントの同期を促す設計：
+- **判定条件**:
+  - 条件1（モジュール内構造変化）: 同一モジュール（ディレクトリ境界）内で新規型・公開APIが追加された、あるいはステートメント変更が `MODERATE` 以上に達した。
+  - 条件2（クロスモジュール変更）: 変更が 2 つ以上の異なるモジュール/パッケージに跨っている。
+- **アドバイザリー内容**:
+  - `requires_intent_review: true`
+  - `description`: どのスコープでどのような構造的変更が生じたかの説明。
+  - `prompt_action`: エージェント/開発者に対し、「モジュール概要、仕様書、アーキテクチャノートなどのコード外ドキュメントを更新すべきか確認・作成する」という具体的な思考・行動アクションを惹起するプロンプト。
+
+#### 5. JSON スキーマ仕様 (`change-impact --json`)
+
+```json
+{
+  "summary": {
+    "impact_level": "MODERATE",
+    "statements_added": 42,
+    "statements_deleted": 2,
+    "complexity_delta": 3,
+    "symbols_added": 1,
+    "symbols_modified": 2,
+    "symbols_deleted": 0,
+    "files_changed": 2,
+    "modules_affected": ["internal/parser"]
+  },
+  "symbols": [
+    {
+      "file": "internal/parser/sql.go",
+      "symbol_path": "extractCteQueryBody",
+      "kind": "function",
+      "visibility": "private",
+      "change_type": "added",
+      "statements_delta": 28,
+      "has_docstring": false
+    },
+    {
+      "file": "internal/parser/sql.go",
+      "symbol_path": "SqlParser.ParseFile",
+      "kind": "method",
+      "visibility": "public",
+      "change_type": "modified",
+      "statements_delta": 12,
+      "has_docstring": true
+    }
+  ],
+  "audit": {
+    "public_api_doc_coverage": 1.0,
+    "private_api_doc_coverage": 0.5,
+    "missing_docstrings": [
+      "internal/parser/sql.go::extractCteQueryBody"
+    ]
+  },
+  "documentation_advisory": {
+    "requires_intent_review": true,
+    "reason": "STRUCTURAL_CHANGE_IN_MODULE",
+    "affected_scopes": [
+      {
+        "scope": "internal/parser",
+        "category": "module_level",
+        "description": "New types or private helper parsing logic were introduced.",
+        "prompt_action": "Verify if module-level documentation (such as overview docs, specifications, or architectural guides) should be created or updated to preserve design intent."
+      }
+    ]
+  }
+}
+```
+
+#### 6. メモリ上ソースコードパースと実装アーキテクチャ方針
+- **Git 差分元のバイト列パース**:
+  - `change-impact` ではコミットオブジェクトやインデックス（`git show <base>:<path>`）から変更前のソースコードを取得するため、ファイルパスだけでなくメモリ上のバイト列（`[]byte`）を直接 Tree-sitter AST 解析に渡す必要がある。
+  - 既存の各言語パーサー（`GolangParser`, `PythonParser`, `TypeScriptParser` 等）に `ParseBytes(content []byte, filePath string) ([]SymbolData, error)` を導入するか、差分ノード走査専用の内部アナライザー（`internal/impact`）を新設してTree-sitter LanguageバインディングからASTツリーを直接走査・比較する方針を採用する。
+

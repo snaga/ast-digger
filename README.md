@@ -4,7 +4,7 @@
 
 AST-Digger は、AIエージェントが大規模なコードベースを効率的に探索するための構文解析・コード抽出ツールです。本ツールはリポジトリルート直下（`cmd/`, `internal/`等）に実装されています。詳細な設計判断の経緯は [`SPECS/design.md`](SPECS/design.md)・[`SPECS/tech.md`](SPECS/tech.md)・[`doc/adr/`](doc/adr/) 配下のADRを参照してください。
 
-> 📎 全8サブコマンド（`outline` / `symbol` / `locate` / `references` / `resolve-import` / `directory` / `feedback` / `agent-context`）が実装済みで、CLIとして一通り機能します。
+> 📎 全9サブコマンド（`outline` / `symbol` / `locate` / `references` / `resolve-import` / `directory` / `feedback` / `agent-context` / `change-impact`）が実装済みで、CLIとして一通り機能します。
 
 ---
 
@@ -591,16 +591,89 @@ ast-digger agent-context
 
 ---
 
+### `change-impact` — 意味的変更インパクト解析・意図とドキュメント充足度評価
+
+```sh
+ast-digger change-impact [--base REF] [--max-statements N] [--require-doc SCOPE] [--fail-on-missing-doc] [--json]
+```
+
+Git差分（デフォルト `HEAD` との比較、未ステージング・ステージング済みを含む）をAST解析し、構文ステートメント（文・式・宣言）の増減、循環複雑度（Cyclomatic Complexity）の差分、影響シンボル一覧、およびDocstring充足度を算出します。さらに、モジュール内構造変化や複数モジュール横断変更を検知した場合に、外部ドキュメント（モジュール概要やADRなど）の同期を促すアドバイザリー（`documentation_advisory`）を生成します。
+
+#### ガードレール検証機能
+- `--max-statements <int>`: 追加ステートメント数が上限を超過した場合、終了コード 2 で失敗します（0 = 無制限）。
+- `--fail-on-missing-doc`: 必須Docstring（`--require-doc` で指定された `exported`, `all`, `none`）が欠落している場合、終了コード 2 で失敗します。
+
+```sh
+# 変更インパクトサマリーをテキスト表示
+./ast-digger change-impact
+
+# ガードレール付き実行（50ステートメント以内、公開APIのDocstring必須）
+./ast-digger change-impact --max-statements 50 --require-doc exported --fail-on-missing-doc
+```
+
+JSON出力例（`--json`）:
+
+```json
+{
+  "summary": {
+    "impact_level": "MODERATE",
+    "statements_added": 42,
+    "statements_deleted": 2,
+    "complexity_delta": 3,
+    "symbols_added": 1,
+    "symbols_modified": 2,
+    "symbols_deleted": 0,
+    "files_changed": 2,
+    "modules_affected": [
+      "internal/parser"
+    ]
+  },
+  "symbols": [
+    {
+      "file": "internal/parser/sql.go",
+      "symbol_path": "extractCteQueryBody",
+      "kind": "function",
+      "visibility": "private",
+      "change_type": "added",
+      "statements_delta": 28,
+      "has_docstring": false
+    }
+  ],
+  "audit": {
+    "public_api_doc_coverage": 1.0,
+    "private_api_doc_coverage": 0.5,
+    "missing_docstrings": [
+      "internal/parser/sql.go::extractCteQueryBody"
+    ]
+  },
+  "documentation_advisory": {
+    "requires_intent_review": true,
+    "reason": "STRUCTURAL_CHANGE_IN_MODULE",
+    "affected_scopes": [
+      {
+        "scope": "internal/parser",
+        "category": "module_level",
+        "description": "New types or private helper parsing logic were introduced.",
+        "prompt_action": "Verify if module-level documentation (such as overview docs, specifications, or architectural guides) should be created or updated to preserve design intent."
+      }
+    ]
+  }
+}
+```
+
+---
+
 ## AIエージェントの推奨ワークフロー
 
 推奨される基本的な探索フロー（ルートの [`SKILL.md`](SKILL.md) で定義済み）は以下の通りです：
 
 ```
-1. directory  → プロジェクト全体のシンボル構成を俯瞰（--json推奨）
-2. outline    → 対象ファイルのスケルトンで構造を把握（--json推奨）
-3. locate     → 目的のシンボルの行範囲・サイズを事前確認
-4. symbol     → サイズを確認した上でピンポイントに実装コードを抽出
-5. references → 変更の影響範囲をプロジェクト横断で確認（--project-rootで絞り込み推奨）
+1. directory     → プロジェクト全体のシンボル構成を俯瞰（--json推奨）
+2. outline       → 対象ファイルのスケルトンで構造を把握（--json推奨）
+3. locate        → 目的のシンボルの行範囲・サイズを事前確認
+4. symbol        → サイズを確認した上でピンポイントに実装コードを抽出
+5. references    → 変更の影響範囲をプロジェクト横断で確認（--project-rootで絞り込み推奨）
+6. change-impact → タスク実装後の変更規模・AST複雑度・Docstring充足度・外部ドキュメント同期アドバイザリーを自己監査（ガードレール検証）
 ```
 
 ### 避けるべきアンチパターン

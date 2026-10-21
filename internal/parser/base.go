@@ -60,6 +60,10 @@ type Parser interface {
 	// ParseFile parses filePath and returns the list of symbols found in it.
 	ParseFile(filePath string) ([]SymbolData, error)
 
+	// ParseBytes parses source byte content for filePath and returns the list
+	// of symbols found in it.
+	ParseBytes(source []byte, filePath string) ([]SymbolData, error)
+
 	// ExtractSymbol resolves symbolPath (e.g. "MyClass.my_method") within
 	// filePath and returns the corresponding SymbolData, including its
 	// source code.

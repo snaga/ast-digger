@@ -112,15 +112,30 @@ func (e *DatabaseCorruptedError) Unwrap() error {
 	return e.Err
 }
 
+// GuardrailError indicates that a change impact guardrail check failed
+// (e.g. statement threshold exceeded or required docstring missing).
+type GuardrailError struct {
+	Message string
+}
+
+func (e *GuardrailError) Error() string {
+	return e.Message
+}
+
 // ExitCode maps err to the process exit code defined by the taxonomy in
 // design_GOLANG.md. A nil err maps to ExitOK. Errors that are not one of the
 // custom types defined in this package map to ExitInternalError; CLI
 // parameter validation errors (ExitCLIParamError) are expected to be
 // detected and reported directly by the CLI layer (cobra flag validation)
-// rather than via a value returned from this package.
+// or via GuardrailError.
 func ExitCode(err error) int {
 	if err == nil {
 		return ExitOK
+	}
+
+	var guardrailErr *GuardrailError
+	if errors.As(err, &guardrailErr) {
+		return ExitCLIParamError
 	}
 
 	var fileErr *FileAccessError

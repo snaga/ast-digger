@@ -300,4 +300,3 @@ func TestMarkdownParser_ExtractSymbol_OutOfBoundsClamp(t *testing.T) {
 		}
 	}
 }
-

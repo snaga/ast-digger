@@ -1,10 +1,11 @@
 // Command ast-digger is the Go implementation of the AST-Digger CLI.
 //
 // It wires cobra subcommands (outline, symbol, resolve-import, directory,
-// feedback, locate, references, agent-context) to outline.Outliner,
-// translating results/errors to the text/JSON output conventions and exit
-// code taxonomy documented in SPECS/design_GOLANG.md. It corresponds to
-// ast_digger/__main__.py in the Python implementation.
+// feedback, locate, references, agent-context, change-impact) to
+// outline.Outliner and internal/impact, translating results/errors to the
+// text/JSON output conventions and exit code taxonomy documented in
+// SPECS/design_GOLANG.md. It corresponds to ast_digger/__main__.py in the
+// Python implementation.
 package main
 
 import (
@@ -68,6 +69,7 @@ Supported languages and extensions:
 		newLocateCmd(),
 		newReferencesCmd(),
 		newAgentContextCmd(),
+		newChangeImpactCmd(),
 	)
 
 	return rootCmd

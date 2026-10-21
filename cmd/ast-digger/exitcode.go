@@ -65,7 +65,7 @@ func businessLogicReached(cmd *cobra.Command) bool {
 // err falls into one of three buckets:
 //   - nil: ExitOK.
 //   - one of apperr's custom error types (FileAccessError,
-//     SymbolNotFoundError, DatabaseCorruptedError), possibly wrapped: its
+//     SymbolNotFoundError, DatabaseCorruptedError, GuardrailError), possibly wrapped: its
 //     designated exit code via apperr.ExitCode, regardless of
 //     businessLogicReached (an apperr error is unambiguous regardless of
 //     where it originated).

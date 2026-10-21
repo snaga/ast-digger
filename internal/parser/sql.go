@@ -401,6 +401,11 @@ func (p *SqlParser) ParseFile(filePath string) ([]SymbolData, error) {
 	if err != nil {
 		return nil, err
 	}
+	return p.ParseBytes(source, filePath)
+}
+
+// ParseBytes parses source and returns the list of symbols found in it.
+func (p *SqlParser) ParseBytes(source []byte, filePath string) ([]SymbolData, error) {
 	relPath := relFilePath(filePath)
 
 	tree, err := p.parseSource(source)
