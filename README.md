@@ -693,6 +693,20 @@ JSON出力例（`--json`）:
 
 ## 📜 更新履歴
 
+### 0.3.1 (2026-10-21)
+
+- **新コマンド `change-impact` (意味的変更インパクト解析・意図とドキュメント充足度評価)**:
+  - Git差分（作業ツリー/指定base）に対して、物理行数ではなく AST ステートメント純増減および循環複雑度差分（Cyclomatic Complexity Delta）を言語横断（Go, Python, TypeScript, Rust, Java, SQL）で計測。
+  - 変更行とシンボルの突合による変更シンボル一覧の特定（追加・変更・削除）。
+  - 可視性（Public/Private）に応じた Docstring 充足率の監査および欠落シンボルの特定（削除シンボルの除外対応）。
+  - モジュール内の大規模構造変化や複数モジュール横断変更を検知し、設計意図を維持するための外部ドキュメントや ADR の更新・作成を促す汎用アドバイザリー（`documentation_advisory`）を出力。
+  - ガードレール検証機能（`--max-statements <int>`, `--fail-on-missing-doc`）を実装。違反時でもエージェントが自律修正できるようレポートを標準出力に先行出力した上で終了コード 2 を返却。
+  - 機械可読な `--json` フォーマット出力に対応。
+- **パーサー基盤の共通拡張**:
+  - `internal/parser.Parser` インターフェースに `ParseBytes` を追加し、一時ディスク I/O ゼロでメモリ上のソースコードバイト列を直接 Tree-sitter で AST パース可能に拡張。
+- **アーキテクチャ決定レコード (ADR)**:
+  - `doc/adr/0006-semantic-change-impact-and-intent-verification.md` を追加。
+
 ### 0.3.0 (2026-09-21)
 
 - **Snowflake SQL 対応**:
