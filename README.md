@@ -755,6 +755,21 @@ AST-Digger MCP サーバーのツール定義（Tool Schemas）およびパラ�
 
 ## 📜 更新履歴
 
+### Unreleased (feat/mcp)
+
+- **内包型 Model Context Protocol (MCP) サーバー (`ast-digger mcp`)**:
+  - `github.com/mark3labs/mcp-go` を統合し、単一バイナリ内包型で stdio トランスポート経由の JSON-RPC 2.0 MCP サーバーを実装。外部 Node.js ランタイムや依存パッケージ不要でスタンドアロン動作。
+  - 標準入出力の完全隔離（Stdio Isolation）により、ログや標準エラー出力を stderr へ分離し、JSON-RPC 2.0 ストリームの汚染を防止。
+  - 従来の8コマンドを用途別に洗練・集約した **4大コアツール** をエージェント向けに公開:
+    - `ast_explore`: ディレクトリ探索（再帰木構造・主要シンボル一覧）およびファイル骨格（スケルトン）抽出。
+    - `ast_symbol`: 特定シンボルの実装コード抽出、行範囲特定（`locate_only: true`）、依存追跡（`follow_imports: true`）。
+    - `ast_trace`: インポート定義元の特定（`mode: "definition"`）およびプロジェクト全体のシンボル参照検索（`mode: "references"`）。
+    - `ast_audit`: Git差分に基づく意味的変更インパクト解析、Docstring監査、外部ドキュメント同期アドバイザリー。
+  - **負のアフォーダンス設計 (Negative Affordance Design)**:
+    - ツール定義（Tool Schemas）とパラメータ説明に負のアフォーダンス（アンチパターン抑止）を注入。エージェントが安易に `read_file` でファイルを丸呑みすることを防ぎ、最小限のコンテキスト探索を強制。
+- **アーキテクチャ決定レコード (ADR)**:
+  - `doc/adr/0007-builtin-mcp-server-and-tool-consolidation.md` を追加。
+
 ### 0.3.1 (2026-10-21)
 
 - **新コマンド `change-impact` (意味的変更インパクト解析・意図とドキュメント充足度評価)**:
