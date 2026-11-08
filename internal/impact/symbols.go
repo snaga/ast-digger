@@ -189,6 +189,10 @@ func determineVisibility(filePath string, sym parser.SymbolData) string {
 		}
 		return "private"
 
+	case ".md", ".markdown":
+		// Markdown: Document structure headings/code blocks are not exported APIs
+		return "private"
+
 	default:
 		return "public"
 	}

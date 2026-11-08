@@ -379,6 +379,7 @@ func Add(a, b int) int {
 	}
 }
 
+// TestDetermineVisibility_AllLanguages verifies the language-specific visibility detection logic.
 func TestDetermineVisibility_AllLanguages(t *testing.T) {
 	makeSym := func(name, sig string) parser.SymbolData {
 		var s *string
@@ -421,6 +422,10 @@ func TestDetermineVisibility_AllLanguages(t *testing.T) {
 		{name: "rust pub", file: "lib.rs", sym: makeSym("foo", "pub fn foo()"), expected: "public"},
 		{name: "rust pub(crate)", file: "lib.rs", sym: makeSym("foo", "pub(crate) fn foo()"), expected: "public"},
 		{name: "rust private", file: "lib.rs", sym: makeSym("foo", "fn foo()"), expected: "private"},
+
+		// Markdown
+		{name: "markdown heading", file: "README.md", sym: makeSym("Header", ""), expected: "private"},
+		{name: "markdown doc", file: "guide.markdown", sym: makeSym("Section", ""), expected: "private"},
 
 		// Default
 		{name: "other lang", file: "query.sql", sym: makeSym("tbl", ""), expected: "public"},

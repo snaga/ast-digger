@@ -15,6 +15,7 @@ AST-Digger は、AIエージェントが大規模なコードベースを効率�
 - [インストール / ビルド](#インストール--ビルド)
 - [クイックスタート](#クイックスタート)
 - [コマンドリファレンス](#コマンドリファレンス)
+- [Model Context Protocol (MCP) サーバーとしての利用](#model-context-protocol-mcp-サーバーとしての利用)
 - [AIエージェントの推奨ワークフロー](#aiエージェントの推奨ワークフロー)
 - [キャッシュと差分スキャン](#キャッシュと差分スキャン)
 - [ライセンス](#ライセンス)
@@ -660,6 +661,67 @@ JSON出力例（`--json`）:
   }
 }
 ```
+
+### `mcp` — Model Context Protocol (MCP) サーバーの起動
+
+```sh
+ast-digger mcp
+```
+
+標準入出力（stdio）上で動作する組み込み MCP サーバーを起動します。AIエージェント環境（Claude Desktop, Antigravity, Cursor 等）に対し、4大コアツール（`ast_explore`, `ast_symbol`, `ast_trace`, `ast_audit`）を公開します。
+
+---
+
+## Model Context Protocol (MCP) サーバーとしての利用
+
+AST-Digger は、AIエージェント環境（Claude Desktop、Antigravity、Cursor など）から直接利用できる **Model Context Protocol (MCP)** サーバー機能を内蔵しています。標準入出力（stdio）トランスポートを介して、コードベースの軽量かつ高精度な探索インターフェースを提供します。
+
+### 設定例 (Configuration)
+
+#### Claude Desktop (`claude_desktop_config.json`)
+
+```json
+{
+  "mcpServers": {
+    "ast-digger": {
+      "command": "ast-digger",
+      "args": ["mcp"]
+    }
+  }
+}
+```
+
+#### Antigravity / Cursor / その他エージェント設定例
+
+```json
+{
+  "mcpServers": {
+    "ast-digger": {
+      "command": "/path/to/ast-digger",
+      "args": ["mcp"]
+    }
+  }
+}
+```
+
+### 統合4大コアツール一覧
+
+AST-Digger MCP サーバーは、CLIの各サブコマンドを用途別に洗練・集約した以下の4つのコアツールをエージェントに公開します。
+
+| ツール名 | 説明 | 主な入力引数 | 対応CLI機能 |
+| :--- | :--- | :--- | :--- |
+| `ast_explore` | ディレクトリ構造またはファイル骨格（スケルトン）の探索 | `path` (必須), `limit` | `directory`, `outline` |
+| `ast_symbol` | 特定シンボルの実装コード抽出または行範囲特定 | `file_path` (必須), `symbol_path` (必須), `locate_only`, `follow_imports`, `limit_lines` | `symbol`, `locate` |
+| `ast_trace` | シンボルのインポート定義元解決または参照箇所検索 | `mode` (`definition` / `references`, 必須), `name` (必須), `file_path`, `project_root`, `limit` | `resolve-import`, `references` |
+| `ast_audit` | Git差分に基づく意味的変更インパクト解析・Docstring充足度評価 | `base` (デフォルト `HEAD`), `require_doc` (`exported` / `all` / `none`) | `change-impact` |
+
+### 負のアフォーダンス設計 (Negative Affordance Design)
+
+AST-Digger MCP サーバーのツール定義（Tool Schemas）およびパラメータ説明には、**負のアフォーダンス（アンチパターン抑止）** が明確に組み込まれています。
+
+- **巨大ファイルの丸呑み防止**: 通常の `read_file` 等による全行一括読み込みではなく、`ast_explore` で骨格のみを把握し、`ast_symbol` で必要なシンボルのみをピンポイント抽出するよう誘導します。
+- **過度な参照検索の抑制**: `ast_trace` (references) ではデフォルト上限（50件）とページングヒントを提示し、巨大プロジェクトでのコンテキスト消費爆発を防ぎます。
+- **Docstring・意図同期の自己修復**: `ast_audit` を通じて、エージェント自身が変更直後にDocstring欠落や設計意図の乖離を自律的に検知・修正（Self-Healing）できます。
 
 ---
 
