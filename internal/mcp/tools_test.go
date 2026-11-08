@@ -211,16 +211,17 @@ func TestCoreTools_List(t *testing.T) {
 func TestStubHandlers(t *testing.T) {
 	server := NewServer("test-server", "1.0.0", nil)
 	underlying := server.GetUnderlyingServer()
-	tools := CoreTools()
+	// Only ast_trace and ast_audit remain stubs; ast_explore and ast_symbol have real handlers.
+	stubTools := []string{ToolNameTrace, ToolNameAudit}
 
-	for _, tool := range tools {
-		t.Run("stub_"+tool.Name, func(t *testing.T) {
-			st := underlying.GetTool(tool.Name)
+	for _, toolName := range stubTools {
+		t.Run("stub_"+toolName, func(t *testing.T) {
+			st := underlying.GetTool(toolName)
 			require.NotNil(t, st)
 			require.NotNil(t, st.Handler)
 
 			req := mcp.CallToolRequest{}
-			req.Params.Name = tool.Name
+			req.Params.Name = toolName
 			result, err := st.Handler(context.Background(), req)
 			assert.NoError(t, err, "Stub handler should return nil error but tool result error")
 			require.NotNil(t, result)
@@ -231,7 +232,7 @@ func TestStubHandlers(t *testing.T) {
 			textContent, ok := result.Content[0].(mcp.TextContent)
 			require.True(t, ok)
 			assert.Contains(t, textContent.Text, "not implemented yet")
-			assert.Contains(t, textContent.Text, tool.Name)
+			assert.Contains(t, textContent.Text, toolName)
 		})
 	}
 }
