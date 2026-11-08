@@ -21,7 +21,7 @@
 | CLI フレームワーク | `github.com/spf13/cobra` | サブコマンド・フラグ定義・ヘルプ生成に対応。`agent-context` のスキーマをコマンド定義から動的導出する設計がcobraのコマンドツリーAPIに依存するため採用。 |
 | SQLite ドライバ | `modernc.org/sqlite`（Pure Go, CGO不要） | キャッシュ・インデックス（シンボルデータベース）用。tree-sitter側は既にCGO必須だが、SQLite部分だけでもPure Go実装にしておくことで依存関係とビルドの複雑さを最小限に抑える。 |
 | JSON | 標準ライブラリ `encoding/json` | `--json` 出力のシリアライズに使用。追加依存を避ける。 |
-| MCP サーバー実装 | 未定 | 将来的な拡張スコープ（現時点ではスコープ外）。 |
+| MCP サーバー実装 | `github.com/mark3labs/mcp-go`（Pure Go） | Model Context Protocol (MCP) の stdio トランスポート対応 JSON-RPC サーバー実装。Zero-Dependency で単一バイナリに内包可能であり、型安全なツール定義（JSON Schema）とシリアライズを低オーバーヘッドで処理できるため採用（[ADR-0007](./adr/0007-builtin-mcp-server-and-tool-consolidation.md) 参照）。 |
 
 ## 🧪 テストツール
 - **標準 `testing` パッケージ**: ユニットテスト・テーブル駆動テストの基盤。

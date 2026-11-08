@@ -15,10 +15,15 @@ ast-digger/                    # リポジトリルート
 │   └── ast-digger/
 │       ├── main.go            # CLI エントリーポイント（cobra ルートコマンド登録）
 │       ├── agentcontext.go    # agent-context: スキーマ動的導出
+│       ├── mcp.go             # mcp: stdio JSON-RPC MCPサーバー起動
 │       ├── output.go          # text/JSON出力共通ヘルパー
 │       ├── exitcode.go        # 終了コード判定
 │       └── truncate.go        # 出力切り詰め処理
 ├── internal/
+│   ├── mcp/                   # Model Context Protocol (MCP) サーバー・ツール統合
+│   │   ├── server.go          # MCP サーバー初期化・ツール登録・stdio ループ
+│   │   ├── tools.go           # 4大コアツールの JSON Schema 定義および負のアフォーダンス設計
+│   │   └── handlers.go        # 各ツールリクエストを既存パッケージへ委譲するハンドラ
 │   ├── parser/                # 各言語用 AST 解析パーサー
 │   │   ├── base.go            # Parser インターフェース、SymbolData/ReferenceData 型定義
 │   │   ├── python.go          # Python 解析用パーサー
@@ -57,6 +62,7 @@ ast-digger/                    # リポジトリルート
   - `internal/db/`: SQLite のテーブル操作および `mtime`/ハッシュによるキャッシュ差分スキャン処理を担当する。
   - `internal/outline/`: フォルダ構成やシンボル一覧のツリー表現、スケルトンコード生成を担当する。
   - `cmd/ast-digger/main.go`: CLIの入力パラメータのパース（cobra）、および各パッケージのオーケストレーション。
+  - `internal/mcp/`: Model Context Protocol に準拠した stdio サーバーを常駐実行し、エージェント向け 4大コアツール（`ast_explore`, `ast_symbol`, `ast_trace`, `ast_audit`）のリクエストを `internal/{outline,parser,impact}` の既存ロジックへ安全にディスパッチする。
   - `internal/apperr/`: エラー型と終了コードのマッピングを一元管理する。
 - **`internal/` パッケージの使用**: Go言語の `internal` ディレクトリ機構を活用し、外部から実装詳細への直接依存を防ぐ。外部公開が必要なAPIが生じた場合のみ `pkg/` の新設を検討する（現時点では不要）。
 
