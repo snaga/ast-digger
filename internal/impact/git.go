@@ -207,27 +207,29 @@ func parseGitDiff(output []byte) ([]*FileDiffInfo, error) {
 			current.FilePath = cleanGitDiffPath(strings.TrimPrefix(line, "rename to "))
 			continue
 		}
-		if line == "--- /dev/null" {
-			current.IsNew = true
-			continue
-		}
-		if strings.HasPrefix(line, "--- ") {
-			p := cleanGitDiffPath(strings.TrimPrefix(line, "--- "))
-			if p != "" {
-				current.OldPath = p
+		if !inHunk {
+			if line == "--- /dev/null" {
+				current.IsNew = true
+				continue
 			}
-			continue
-		}
-		if line == "+++ /dev/null" {
-			current.IsDeleted = true
-			continue
-		}
-		if strings.HasPrefix(line, "+++ ") {
-			p := cleanGitDiffPath(strings.TrimPrefix(line, "+++ "))
-			if p != "" {
-				current.FilePath = p
+			if strings.HasPrefix(line, "--- ") {
+				p := cleanGitDiffPath(strings.TrimPrefix(line, "--- "))
+				if p != "" {
+					current.OldPath = p
+				}
+				continue
 			}
-			continue
+			if line == "+++ /dev/null" {
+				current.IsDeleted = true
+				continue
+			}
+			if strings.HasPrefix(line, "+++ ") {
+				p := cleanGitDiffPath(strings.TrimPrefix(line, "+++ "))
+				if p != "" {
+					current.FilePath = p
+				}
+				continue
+			}
 		}
 
 		if strings.HasPrefix(line, "@@ ") {
