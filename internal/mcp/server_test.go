@@ -25,6 +25,7 @@ func TestNewServer_Defaults(t *testing.T) {
 	assert.NotNil(t, s2.GetUnderlyingServer())
 }
 
+// TestMCPServer_Serve_InitializeAndToolsList tests MCP lifecycle initialization and tools/list response.
 func TestMCPServer_Serve_InitializeAndToolsList(t *testing.T) {
 	s := NewServer("test-digger", "0.3.1", nil)
 
@@ -123,7 +124,7 @@ func TestMCPServer_Serve_InitializeAndToolsList(t *testing.T) {
 
 	assert.Equal(t, "2.0", toolsListResp.JSONRPC)
 	assert.Equal(t, 2, toolsListResp.ID)
-	assert.Empty(t, toolsListResp.Result.Tools, "Should have empty tools initially")
+	assert.Len(t, toolsListResp.Result.Tools, 4, "Should have 4 core tools registered")
 
 	// 4. Shutdown cleanly by closing client input stream
 	err = clientOut.Close()

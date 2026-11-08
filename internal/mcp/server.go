@@ -43,6 +43,8 @@ func NewServer(name, version string, outliner *outline.Outliner) *MCPServer {
 		outliner: outliner,
 	}
 
+	s.registerCoreTools()
+
 	return s
 }
 
