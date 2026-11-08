@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -421,5 +422,428 @@ func TestTruncateLines(t *testing.T) {
 	}
 	if !strings.Contains(got, "TRUNCATED (50 lines omitted)") {
 		t.Errorf("expected truncation notice with 50 lines omitted, got:\n%s", got)
+	}
+}
+
+// TestMCPServer_HandleTrace_Definition_Success verifies that HandleTrace resolves the origin file
+// and line number of an imported symbol.
+func TestMCPServer_HandleTrace_Definition_Success(t *testing.T) {
+	chdirTest(t, "../../testdata/python/importproj")
+
+	outliner := outline.NewOutliner()
+	server := NewServer("test-server", "1.0.0", outliner)
+	ctx := context.Background()
+
+	req := mcp.CallToolRequest{
+		Params: mcp.CallToolParams{
+			Name: ToolNameTrace,
+			Arguments: map[string]any{
+				"action":    "definition",
+				"symbol":    "add",
+				"file_path": "main.py",
+			},
+		},
+	}
+
+	res, err := server.HandleTrace(ctx, req)
+	if err != nil {
+		t.Fatalf("unexpected handler error: %v", err)
+	}
+	if res.IsError {
+		t.Fatalf("expected success, got error: %s", extractResultText(t, res))
+	}
+
+	text := extractResultText(t, res)
+	var payload struct {
+		DefinitionFile string `json:"definition_file"`
+		Line           int    `json:"line"`
+	}
+	if err := json.Unmarshal([]byte(text), &payload); err != nil {
+		t.Fatalf("failed to unmarshal JSON: %v, text: %s", err, text)
+	}
+	if payload.DefinitionFile != "mathutils.py" || payload.Line != 1 {
+		t.Errorf("expected mathutils.py:1, got %s:%d", payload.DefinitionFile, payload.Line)
+	}
+}
+
+// TestMCPServer_HandleTrace_Definition_NotFound verifies that HandleTrace returns an error
+// when the requested symbol is not imported by the file.
+func TestMCPServer_HandleTrace_Definition_NotFound(t *testing.T) {
+	chdirTest(t, "../../testdata/python/importproj")
+
+	outliner := outline.NewOutliner()
+	server := NewServer("test-server", "1.0.0", outliner)
+	ctx := context.Background()
+
+	req := mcp.CallToolRequest{
+		Params: mcp.CallToolParams{
+			Name: ToolNameTrace,
+			Arguments: map[string]any{
+				"action":    "definition",
+				"symbol":    "nonexistent_func",
+				"file_path": "main.py",
+			},
+		},
+	}
+
+	res, err := server.HandleTrace(ctx, req)
+	if err != nil {
+		t.Fatalf("unexpected handler error: %v", err)
+	}
+	if !res.IsError {
+		t.Fatalf("expected error result for nonexistent symbol")
+	}
+}
+
+// TestMCPServer_HandleTrace_Definition_FileNotFound verifies that HandleTrace reports an error
+// if file_path does not exist.
+func TestMCPServer_HandleTrace_Definition_FileNotFound(t *testing.T) {
+	chdirTest(t, "../../testdata/python/importproj")
+
+	outliner := outline.NewOutliner()
+	server := NewServer("test-server", "1.0.0", outliner)
+	ctx := context.Background()
+
+	req := mcp.CallToolRequest{
+		Params: mcp.CallToolParams{
+			Name: ToolNameTrace,
+			Arguments: map[string]any{
+				"action":    "definition",
+				"symbol":    "add",
+				"file_path": "does_not_exist.py",
+			},
+		},
+	}
+
+	res, err := server.HandleTrace(ctx, req)
+	if err != nil {
+		t.Fatalf("unexpected handler error: %v", err)
+	}
+	if !res.IsError {
+		t.Fatalf("expected error result for nonexistent file")
+	}
+	text := extractResultText(t, res)
+	if !strings.Contains(text, "file not found") {
+		t.Errorf("expected 'file not found' error, got: %s", text)
+	}
+}
+
+// TestMCPServer_HandleTrace_References_Success verifies that HandleTrace searches all project-wide references.
+func TestMCPServer_HandleTrace_References_Success(t *testing.T) {
+	chdirTest(t, "../../testdata/python/references")
+
+	outliner := outline.NewOutliner()
+	server := NewServer("test-server", "1.0.0", outliner)
+	ctx := context.Background()
+
+	req := mcp.CallToolRequest{
+		Params: mcp.CallToolParams{
+			Name: ToolNameTrace,
+			Arguments: map[string]any{
+				"action": "references",
+				"symbol": "target_func",
+				"limit":  30,
+			},
+		},
+	}
+
+	res, err := server.HandleTrace(ctx, req)
+	if err != nil {
+		t.Fatalf("unexpected handler error: %v", err)
+	}
+	if res.IsError {
+		t.Fatalf("expected success, got error: %s", extractResultText(t, res))
+	}
+
+	text := extractResultText(t, res)
+	if !strings.Contains(text, "caller_a.py") || !strings.Contains(text, "caller_b.py") {
+		t.Errorf("expected references in caller_a.py and caller_b.py, got:\n%s", text)
+	}
+}
+
+// TestMCPServer_HandleTrace_References_LimitTruncated verifies that HandleTrace truncates results
+// and appends a hint when matches exceed limit.
+func TestMCPServer_HandleTrace_References_LimitTruncated(t *testing.T) {
+	chdirTest(t, "../../testdata/python/references")
+
+	outliner := outline.NewOutliner()
+	server := NewServer("test-server", "1.0.0", outliner)
+	ctx := context.Background()
+
+	req := mcp.CallToolRequest{
+		Params: mcp.CallToolParams{
+			Name: ToolNameTrace,
+			Arguments: map[string]any{
+				"action": "references",
+				"symbol": "target_func",
+				"limit":  1,
+			},
+		},
+	}
+
+	res, err := server.HandleTrace(ctx, req)
+	if err != nil {
+		t.Fatalf("unexpected handler error: %v", err)
+	}
+	if res.IsError {
+		t.Fatalf("expected success, got error: %s", extractResultText(t, res))
+	}
+
+	text := extractResultText(t, res)
+	if !strings.Contains(text, "truncated: 1 of 2 results shown") {
+		t.Errorf("expected truncation hint in output, got:\n%s", text)
+	}
+}
+
+// TestMCPServer_HandleTrace_References_NoMatches verifies that HandleTrace gracefully returns a notice
+// when no references are found.
+func TestMCPServer_HandleTrace_References_NoMatches(t *testing.T) {
+	chdirTest(t, "../../testdata/python/references")
+
+	outliner := outline.NewOutliner()
+	server := NewServer("test-server", "1.0.0", outliner)
+	ctx := context.Background()
+
+	req := mcp.CallToolRequest{
+		Params: mcp.CallToolParams{
+			Name: ToolNameTrace,
+			Arguments: map[string]any{
+				"action": "references",
+				"symbol": "unreferenced_symbol_12345",
+			},
+		},
+	}
+
+	res, err := server.HandleTrace(ctx, req)
+	if err != nil {
+		t.Fatalf("unexpected handler error: %v", err)
+	}
+	if res.IsError {
+		t.Fatalf("expected non-error result, got error: %s", extractResultText(t, res))
+	}
+
+	text := extractResultText(t, res)
+	if !strings.Contains(text, "no references found") {
+		t.Errorf("expected 'no references found', got: %s", text)
+	}
+}
+
+// TestMCPServer_HandleTrace_ValidationErrors verifies parameter validation in HandleTrace.
+func TestMCPServer_HandleTrace_ValidationErrors(t *testing.T) {
+	server := NewServer("test-server", "1.0.0", outline.NewOutliner())
+	ctx := context.Background()
+
+	// Missing action
+	res, err := server.HandleTrace(ctx, mcp.CallToolRequest{
+		Params: mcp.CallToolParams{
+			Name: ToolNameTrace,
+			Arguments: map[string]any{
+				"symbol": "foo",
+			},
+		},
+	})
+	if err != nil || !res.IsError {
+		t.Errorf("expected error for missing action")
+	}
+
+	// Invalid action
+	res, err = server.HandleTrace(ctx, mcp.CallToolRequest{
+		Params: mcp.CallToolParams{
+			Name: ToolNameTrace,
+			Arguments: map[string]any{
+				"action": "unknown_action",
+				"symbol": "foo",
+			},
+		},
+	})
+	if err != nil || !res.IsError {
+		t.Errorf("expected error for invalid action")
+	}
+
+	// Missing symbol
+	res, err = server.HandleTrace(ctx, mcp.CallToolRequest{
+		Params: mcp.CallToolParams{
+			Name: ToolNameTrace,
+			Arguments: map[string]any{
+				"action": "references",
+			},
+		},
+	})
+	if err != nil || !res.IsError {
+		t.Errorf("expected error for missing symbol")
+	}
+
+	// Missing file_path in definition mode
+	res, err = server.HandleTrace(ctx, mcp.CallToolRequest{
+		Params: mcp.CallToolParams{
+			Name: ToolNameTrace,
+			Arguments: map[string]any{
+				"action": "definition",
+				"symbol": "foo",
+			},
+		},
+	})
+	if err != nil || !res.IsError {
+		t.Errorf("expected error for missing file_path in definition mode")
+	}
+}
+
+// setupTestRepo creates a temporary git repository with initial git configuration for testing HandleAudit.
+func setupTestRepo(t *testing.T) string {
+	t.Helper()
+	dir := t.TempDir()
+
+	commands := [][]string{
+		{"git", "init"},
+		{"git", "config", "user.name", "Test User"},
+		{"git", "config", "user.email", "test@example.com"},
+		{"git", "config", "core.autocrlf", "false"},
+	}
+
+	for _, args := range commands {
+		cmd := exec.Command(args[0], args[1:]...)
+		cmd.Dir = dir
+		if out, err := cmd.CombinedOutput(); err != nil {
+			t.Fatalf("setup git command %v failed: %v, output: %s", args, err, string(out))
+		}
+	}
+
+	return dir
+}
+
+// execGit runs a git command within dir.
+func execGit(t *testing.T, dir string, args ...string) string {
+	t.Helper()
+	cmd := exec.Command("git", args...)
+	cmd.Dir = dir
+	out, err := cmd.CombinedOutput()
+	if err != nil {
+		t.Fatalf("git %v failed: %v, output: %s", args, err, string(out))
+	}
+	return string(out)
+}
+
+// TestMCPServer_HandleAudit_Success verifies that HandleAudit inspects git changes, calculates
+// statement and complexity metrics, and outputs a formatted visual summary.
+func TestMCPServer_HandleAudit_Success(t *testing.T) {
+	repoDir := setupTestRepo(t)
+	chdirTest(t, repoDir)
+
+	// Create initial file and commit
+	initialFile := filepath.Join(repoDir, "calc.py")
+	initialContent := "def add(a, b):\n    '''Add two numbers.'''\n    return a + b\n"
+	if err := os.WriteFile(initialFile, []byte(initialContent), 0644); err != nil {
+		t.Fatal(err)
+	}
+	execGit(t, repoDir, "add", "calc.py")
+	execGit(t, repoDir, "commit", "-m", "initial commit")
+
+	// Modify file in working tree: add multiply function without docstring
+	modifiedContent := initialContent + "\ndef multiply(a, b):\n    if a > 0:\n        return a * b\n    return 0\n"
+	if err := os.WriteFile(initialFile, []byte(modifiedContent), 0644); err != nil {
+		t.Fatal(err)
+	}
+
+	server := NewServer("test-server", "1.0.0", outline.NewOutliner())
+	ctx := context.Background()
+
+	req := mcp.CallToolRequest{
+		Params: mcp.CallToolParams{
+			Name: ToolNameAudit,
+			Arguments: map[string]any{
+				"base":           "HEAD",
+				"require_doc":    true,
+				"max_complexity": 1,
+			},
+		},
+	}
+
+	res, err := server.HandleAudit(ctx, req)
+	if err != nil {
+		t.Fatalf("unexpected handler error: %v", err)
+	}
+	if res.IsError {
+		t.Fatalf("expected success, got error: %s", extractResultText(t, res))
+	}
+
+	text := extractResultText(t, res)
+	if !strings.Contains(text, "Change Impact Analysis Summary") {
+		t.Errorf("expected summary section in output, got:\n%s", text)
+	}
+	if !strings.Contains(text, "Impacted Symbols:") {
+		t.Errorf("expected impacted symbols section, got:\n%s", text)
+	}
+	if !strings.Contains(text, "Documentation Audit:") {
+		t.Errorf("expected doc audit section, got:\n%s", text)
+	}
+	if !strings.Contains(text, "multiply") {
+		t.Errorf("expected 'multiply' in output, got:\n%s", text)
+	}
+}
+
+// TestMCPServer_HandleAudit_NoDocRequirement verifies that HandleAudit respects require_doc=false.
+func TestMCPServer_HandleAudit_NoDocRequirement(t *testing.T) {
+	repoDir := setupTestRepo(t)
+	chdirTest(t, repoDir)
+
+	initialFile := filepath.Join(repoDir, "calc.py")
+	initialContent := "def add(a, b):\n    return a + b\n"
+	if err := os.WriteFile(initialFile, []byte(initialContent), 0644); err != nil {
+		t.Fatal(err)
+	}
+	execGit(t, repoDir, "add", "calc.py")
+	execGit(t, repoDir, "commit", "-m", "initial commit")
+
+	server := NewServer("test-server", "1.0.0", outline.NewOutliner())
+	ctx := context.Background()
+
+	req := mcp.CallToolRequest{
+		Params: mcp.CallToolParams{
+			Name: ToolNameAudit,
+			Arguments: map[string]any{
+				"base":        "HEAD",
+				"require_doc": false,
+			},
+		},
+	}
+
+	res, err := server.HandleAudit(ctx, req)
+	if err != nil {
+		t.Fatalf("unexpected handler error: %v", err)
+	}
+	if res.IsError {
+		t.Fatalf("expected success, got error: %s", extractResultText(t, res))
+	}
+
+	text := extractResultText(t, res)
+	if strings.Contains(text, "Documentation Audit:") {
+		t.Errorf("expected Documentation Audit to be omitted when require_doc=false, got:\n%s", text)
+	}
+}
+
+// TestMCPServer_HandleAudit_InvalidBase verifies that HandleAudit returns a safe error result
+// if an invalid base git reference is provided.
+func TestMCPServer_HandleAudit_InvalidBase(t *testing.T) {
+	repoDir := setupTestRepo(t)
+	chdirTest(t, repoDir)
+
+	server := NewServer("test-server", "1.0.0", outline.NewOutliner())
+	ctx := context.Background()
+
+	req := mcp.CallToolRequest{
+		Params: mcp.CallToolParams{
+			Name: ToolNameAudit,
+			Arguments: map[string]any{
+				"base": "nonexistent_ref_12345",
+			},
+		},
+	}
+
+	res, err := server.HandleAudit(ctx, req)
+	if err != nil {
+		t.Fatalf("unexpected handler error: %v", err)
+	}
+	if !res.IsError {
+		t.Fatalf("expected error result for invalid base revision")
 	}
 }

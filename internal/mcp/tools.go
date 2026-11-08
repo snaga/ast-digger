@@ -113,8 +113,7 @@ func CoreTools() []mcp.Tool {
 }
 
 // registerCoreTools registers all 4 core tools to the underlying MCP server.
-// Real handlers are attached for ast_explore and ast_symbol; remaining tools
-// use stub handlers until implemented.
+// Real handlers are attached for ast_explore, ast_symbol, ast_trace, and ast_audit.
 func (s *MCPServer) registerCoreTools() {
 	tools := CoreTools()
 	for _, tool := range tools {
@@ -124,6 +123,10 @@ func (s *MCPServer) registerCoreTools() {
 			s.server.AddTool(tool, s.HandleExplore)
 		case ToolNameSymbol:
 			s.server.AddTool(tool, s.HandleSymbol)
+		case ToolNameTrace:
+			s.server.AddTool(tool, s.HandleTrace)
+		case ToolNameAudit:
+			s.server.AddTool(tool, s.HandleAudit)
 		default:
 			s.server.AddTool(tool, func(ctx context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {
 				return mcp.NewToolResultError(fmt.Sprintf("tool '%s' is not implemented yet", toolName)), nil

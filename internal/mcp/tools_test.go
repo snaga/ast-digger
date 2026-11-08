@@ -5,6 +5,7 @@ import (
 	"testing"
 
 	"github.com/mark3labs/mcp-go/mcp"
+	"github.com/snaga/ast-digger/internal/outline"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -207,32 +208,30 @@ func TestCoreTools_List(t *testing.T) {
 	assert.Contains(t, names, ToolNameAudit)
 }
 
-// TestStubHandlers validates that all 4 registered tools return safe error results from stub handlers without panicking.
-func TestStubHandlers(t *testing.T) {
-	server := NewServer("test-server", "1.0.0", nil)
+// TestCoreTools_RealHandlersRegistered validates that all 4 registered core tools
+// have non-nil real handlers attached rather than stubs.
+func TestCoreTools_RealHandlersRegistered(t *testing.T) {
+	server := NewServer("test-server", "1.0.0", outline.NewOutliner())
 	underlying := server.GetUnderlyingServer()
-	// Only ast_trace and ast_audit remain stubs; ast_explore and ast_symbol have real handlers.
-	stubTools := []string{ToolNameTrace, ToolNameAudit}
+	coreTools := []string{ToolNameExplore, ToolNameSymbol, ToolNameTrace, ToolNameAudit}
 
-	for _, toolName := range stubTools {
-		t.Run("stub_"+toolName, func(t *testing.T) {
+	for _, toolName := range coreTools {
+		t.Run("real_"+toolName, func(t *testing.T) {
 			st := underlying.GetTool(toolName)
 			require.NotNil(t, st)
 			require.NotNil(t, st.Handler)
 
+			// Invoke handler with empty request to verify it's a real handler, not returning "not implemented yet"
 			req := mcp.CallToolRequest{}
 			req.Params.Name = toolName
 			result, err := st.Handler(context.Background(), req)
-			assert.NoError(t, err, "Stub handler should return nil error but tool result error")
+			assert.NoError(t, err)
 			require.NotNil(t, result)
-			assert.True(t, result.IsError, "Stub handler should return error result")
-			require.NotEmpty(t, result.Content)
-
-			// Verify error message content
-			textContent, ok := result.Content[0].(mcp.TextContent)
-			require.True(t, ok)
-			assert.Contains(t, textContent.Text, "not implemented yet")
-			assert.Contains(t, textContent.Text, toolName)
+			if result.IsError && len(result.Content) > 0 {
+				textContent, ok := result.Content[0].(mcp.TextContent)
+				require.True(t, ok)
+				assert.NotContains(t, textContent.Text, "not implemented yet")
+			}
 		})
 	}
 }
