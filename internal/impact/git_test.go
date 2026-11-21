@@ -6,6 +6,7 @@ import (
 	"os/exec"
 	"path/filepath"
 	"reflect"
+	"strings"
 	"testing"
 )
 
@@ -255,3 +256,40 @@ func Untracked() {
 		}
 	}
 }
+
+// TestGetGitDiff_FlagInjection verifies that GetGitDiff rejects baseRef values
+// starting with a hyphen (flag injection attempt) and returns a validation error.
+func TestGetGitDiff_FlagInjection(t *testing.T) {
+	repoDir := setupTestGitRepo(t)
+
+	tests := []struct {
+		name    string
+		baseRef string
+	}{
+		{
+			name:    "double hyphen flag",
+			baseRef: "--output=/tmp/pwned",
+		},
+		{
+			name:    "single hyphen flag",
+			baseRef: "-v",
+		},
+		{
+			name:    "whitespace prefix with flag",
+			baseRef: "  --stat",
+		},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			_, err := GetGitDiff(repoDir, tc.baseRef)
+			if err == nil {
+				t.Fatalf("expected error for flag injection attempt %q, got nil", tc.baseRef)
+			}
+			if !strings.Contains(err.Error(), "leading hyphens are disallowed") {
+				t.Errorf("expected error mentioning leading hyphens are disallowed, got %q", err.Error())
+			}
+		})
+	}
+}
+

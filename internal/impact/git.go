@@ -20,12 +20,16 @@ var hunkHeaderRegex = regexp.MustCompile(`^@@ -(\d+)(?:,(\d+))? \+(\d+)(?:,(\d+)
 // including untracked files, staged and unstaged changes.
 // If baseRef is empty, "HEAD" is used as default.
 func GetGitDiff(projectRoot string, baseRef string) ([]*FileDiffInfo, error) {
+	baseRef = strings.TrimSpace(baseRef)
+	if strings.HasPrefix(baseRef, "-") {
+		return nil, fmt.Errorf("invalid base revision %q: leading hyphens are disallowed", baseRef)
+	}
 	if baseRef == "" {
 		baseRef = "HEAD"
 	}
 
-	// 1. Run git diff -M <baseRef> to get working tree differences against baseRef
-	diffOut, err := runGit(projectRoot, "-c", "core.quotepath=false", "diff", "-M", baseRef)
+	// 1. Run git diff -M <baseRef> -- to get working tree differences against baseRef
+	diffOut, err := runGit(projectRoot, "-c", "core.quotepath=false", "diff", "-M", baseRef, "--")
 	if err != nil {
 		return nil, fmt.Errorf("failed to run git diff against %s: %w", baseRef, err)
 	}

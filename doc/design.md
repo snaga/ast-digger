@@ -49,9 +49,9 @@
 | SQL構造解析 | F-17 | サブクエリ添字抽出とCTE依存追跡 | `subquery[0]` による名前なしサブクエリの特定・抽出、および `--follow-imports` による上流CTE依存コードの一括抽出を行う。 | 要件 L-2, L-3, L-4 |
 | SQL構造解析 | F-18 | Icepick連携最適化リファクタリング探索 | `icepick` の診断結果（SNOW-002, SNOW-005, SNOW-007等）に基づく重複スキャン集約、相関サブクエリJOIN化、CTE外出しのピンポイント外科手術的探索を行う。 | 要件 L-5, L-6 |
 | SQL構造解析 | F-19 | ビュー定義（CREATE VIEW）認識と警告抑止 | `CREATE [OR REPLACE] [SECURE / MATERIALIZED] VIEW` や `CREATE DYNAMIC TABLE` から名称を抽出してシンボル登録し、同一ファイルの警告連打を抑止する。 | 要件 L-7 |
-| 変更インパクト解析 | F-20 | 意味的変更インパクト解析と意図・ドキュメント充足度評価 | Git差分とAST解析を組み合わせ、構文ステートメント増分、制御複雑度、シンボルDocstring充足度、外部ドキュメント同期アドバイザリーを構造化出力する。 | 要件 M-1, M-2, M-3, M-4 |
+| 変更インパクト解析 | F-20 | 意味的変更インパクト解析と意図・ドキュメント充足度評価 | Git差分とAST解析を組み合わせ、構文ステートメント増分、制御複雑度、シンボルDocstring充足度、外部ドキュメント同期アドバイザリーを構造化出力する。 | 要件 M-1, M-2, M-3, M-4, H-8 |
 | エージェントハーネス・MCP | F-21 | stdio MCPサーバー起動 | 単一バイナリ内で Model Context Protocol (MCP) の stdio JSON-RPC サーバーを起動し、エージェント環境と直接接続する。 | 要件 N-1, N-4 |
-| エージェントハーネス・MCP | F-22 | 4大コアツール統合ディスパッチ | 8種のコマンドを構造把握（`ast_explore`）、局所抽出（`ast_symbol`）、依存追跡（`ast_trace`）、品質検証（`ast_audit`）の4ツールに集約し、インプロセスで高速実行する。 | 要件 N-2, N-4 |
+| エージェントハーネス・MCP | F-22 | 4大コアツール統合ディスパッチ | 8種のコマンドを構造把握（`ast_explore`）、局所抽出（`ast_symbol`）、依存追跡（`ast_trace`）、品質検証（`ast_audit`）の4ツールに集約し、インプロセスで高速実行する。 | 要件 N-2, N-4, H-7 |
 | エージェントハーネス・MCP | F-23 | 負のアフォーダンス設計 (Description Hacking) | ツール定義スキーマに制約文を埋め込み、事前学習バイアスによる `read_file` への安易な逃避を抑止する。 | 要件 N-3 |
 
 
@@ -1083,6 +1083,22 @@ classDiagram
 - `cmd/ast-digger/main.go`: `symbol` サブコマンドに `--follow-imports` (bool) オプションを提供する。
 - `internal/outline/outline.go`: `ExtractSymbolWithDependencies` により、指定シンボルの抽出結果からインポート文を走査し `ResolveImports` を連鎖的に呼び出してローカルモジュールの依存先コード本文を一括取得・連結する。
 - 循環参照防止のため訪問済みマップ（`visitedMap`）を保持し、再帰探索時の安全性を確保する。
+
+---
+
+## 🔒 セキュリティ境界と入力防御設計 (Security Boundaries)
+
+### 1. MCP ワークスペース境界防護 (Path Traversal Protection - 要件 H-7)
+- **脅威モデル**: AIエージェントや外部入力が悪意ある相対パス（例: `../../etc/passwd`）やワークスペース外の絶対パスを指定して機密ファイルを参照するリスク。
+- **防御策**:
+  - `internal/mcp/handlers.go` の `validateWorkspacePath` ヘルパーにより、ワークスペースルート（カレントワーキングディレクトリ）を起点として `filepath.Clean` および `filepath.Rel` を検証。
+  - 親ディレクトリ越境（`strings.HasPrefix(rel, "..")`）やドライブ越境を検知した場合、ファイルアクセスを実行せずに即座にツールエラー（`access denied`）を返却する。
+
+### 2. Git 引数インジェクション防護 (Flag Injection Protection - 要件 H-8)
+- **脅威モデル**: `change-impact` や `ast_audit` の `--base` 引数に悪意ある Git オプション文字列（例: `--output=/tmp/pwned`, `-v`）を注入され、Git の実行挙動が改変されるリスク。
+- **防御策**:
+  - `internal/impact/git.go` の `GetGitDiff` において、`baseRef` が先頭ハイフン（`-`）で始まる場合は不正なリビジョン指定として即座にエラーを返却。
+  - Git コマンド実行時の引数リストにおいて、二重ハイフン（`--`）を用いてフラグ解釈を遮断し、リビジョン参照として安全に評価する。
 
 
 

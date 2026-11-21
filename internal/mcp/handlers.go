@@ -28,6 +28,10 @@ func (s *MCPServer) HandleExplore(ctx context.Context, request mcp.CallToolReque
 	if err != nil || strings.TrimSpace(path) == "" {
 		return mcp.NewToolResultError("missing required parameter: path"), nil
 	}
+	cleanPath, err := validateWorkspacePath(path)
+	if err != nil {
+		return mcp.NewToolResultError(err.Error()), nil
+	}
 
 	recursive := request.GetBool("recursive", true)
 	limit := request.GetInt("limit", 50)
@@ -36,7 +40,7 @@ func (s *MCPServer) HandleExplore(ctx context.Context, request mcp.CallToolReque
 	}
 	full := request.GetBool("full", false)
 
-	fi, err := os.Stat(path)
+	fi, err := os.Stat(cleanPath)
 	if err != nil {
 		if os.IsNotExist(err) {
 			return mcp.NewToolResultError(fmt.Sprintf("path not found: %s", path)), nil
@@ -45,14 +49,14 @@ func (s *MCPServer) HandleExplore(ctx context.Context, request mcp.CallToolReque
 	}
 
 	if fi.IsDir() {
-		tree, err := s.outliner.BuildDirectoryTree(path, recursive, limit)
+		tree, err := s.outliner.BuildDirectoryTree(cleanPath, recursive, limit)
 		if err != nil {
 			return mcp.NewToolResultError(fmt.Sprintf("failed to build directory tree: %v", err)), nil
 		}
 		return mcp.NewToolResultText(tree), nil
 	}
 
-	skeleton, err := s.outliner.GenerateSkeleton(path)
+	skeleton, err := s.outliner.GenerateSkeleton(cleanPath)
 	if err != nil {
 		return mcp.NewToolResultError(fmt.Sprintf("failed to generate skeleton: %v", err)), nil
 	}
@@ -79,6 +83,10 @@ func (s *MCPServer) HandleSymbol(ctx context.Context, request mcp.CallToolReques
 	if err != nil || strings.TrimSpace(filePath) == "" {
 		return mcp.NewToolResultError("missing required parameter: file_path"), nil
 	}
+	cleanPath, err := validateWorkspacePath(filePath)
+	if err != nil {
+		return mcp.NewToolResultError(err.Error()), nil
+	}
 
 	symbol, err := request.RequireString("symbol")
 	if err != nil || strings.TrimSpace(symbol) == "" {
@@ -88,7 +96,7 @@ func (s *MCPServer) HandleSymbol(ctx context.Context, request mcp.CallToolReques
 	followImports := request.GetBool("follow_imports", false)
 	locateOnly := request.GetBool("locate_only", false)
 
-	fi, err := os.Stat(filePath)
+	fi, err := os.Stat(cleanPath)
 	if err != nil {
 		if os.IsNotExist(err) {
 			return mcp.NewToolResultError(fmt.Sprintf("file not found: %s", filePath)), nil
@@ -100,12 +108,12 @@ func (s *MCPServer) HandleSymbol(ctx context.Context, request mcp.CallToolReques
 	}
 
 	if locateOnly {
-		resolvedPath, startLine, endLine, err := s.outliner.LocateSymbol(filePath, symbol)
+		resolvedPath, startLine, endLine, err := s.outliner.LocateSymbol(cleanPath, symbol)
 		if err != nil {
 			return mcp.NewToolResultError(fmt.Sprintf("failed to locate symbol '%s': %v", symbol, err)), nil
 		}
 		if resolvedPath == "" {
-			resolvedPath = filePath
+			resolvedPath = cleanPath
 		}
 		loc := map[string]any{
 			"file_path":  resolvedPath,
@@ -120,7 +128,7 @@ func (s *MCPServer) HandleSymbol(ctx context.Context, request mcp.CallToolReques
 	}
 
 	if followImports {
-		symWithDeps, err := s.outliner.ExtractSymbolWithDependencies(filePath, symbol, true)
+		symWithDeps, err := s.outliner.ExtractSymbolWithDependencies(cleanPath, symbol, true)
 		if err != nil {
 			return mcp.NewToolResultError(fmt.Sprintf("failed to extract symbol '%s': %v", symbol, err)), nil
 		}
@@ -151,7 +159,7 @@ func (s *MCPServer) HandleSymbol(ctx context.Context, request mcp.CallToolReques
 		return mcp.NewToolResultText(code), nil
 	}
 
-	symData, err := s.outliner.ExtractSymbol(filePath, symbol)
+	symData, err := s.outliner.ExtractSymbol(cleanPath, symbol)
 	if err != nil {
 		return mcp.NewToolResultError(fmt.Sprintf("failed to extract symbol '%s': %v", symbol, err)), nil
 	}
@@ -197,7 +205,12 @@ func (s *MCPServer) HandleTrace(ctx context.Context, request mcp.CallToolRequest
 		}
 		filePath = strings.TrimSpace(filePath)
 
-		fi, err := os.Stat(filePath)
+		cleanPath, err := validateWorkspacePath(filePath)
+		if err != nil {
+			return mcp.NewToolResultError(err.Error()), nil
+		}
+
+		fi, err := os.Stat(cleanPath)
 		if err != nil {
 			if os.IsNotExist(err) {
 				return mcp.NewToolResultError(fmt.Sprintf("file not found: %s", filePath)), nil
@@ -208,7 +221,7 @@ func (s *MCPServer) HandleTrace(ctx context.Context, request mcp.CallToolRequest
 			return mcp.NewToolResultError(fmt.Sprintf("path is a directory, not a file: %s", filePath)), nil
 		}
 
-		defFile, line, err := s.outliner.ResolveImports(filePath, symbol)
+		defFile, line, err := s.outliner.ResolveImports(cleanPath, symbol)
 		if err != nil {
 			return mcp.NewToolResultError(fmt.Sprintf("failed to resolve import for '%s': %v", symbol, err)), nil
 		}
@@ -519,4 +532,26 @@ func findGitRoot(startDir string) string {
 		curr = parent
 	}
 	return startDir
+}
+
+// validateWorkspacePath verifies that path is safely contained within the current
+// workspace root directory (os.Getwd), guarding against directory traversal attacks.
+func validateWorkspacePath(path string) (string, error) {
+	cwd, err := os.Getwd()
+	if err != nil {
+		return "", fmt.Errorf("failed to get current working directory: %w", err)
+	}
+
+	cleaned := filepath.Clean(path)
+	absPath := cleaned
+	if !filepath.IsAbs(cleaned) {
+		absPath = filepath.Join(cwd, cleaned)
+	}
+
+	rel, err := filepath.Rel(cwd, absPath)
+	if err != nil || strings.HasPrefix(rel, "..") || rel == ".." {
+		return "", fmt.Errorf("access denied: path %q is outside workspace root", path)
+	}
+
+	return cleaned, nil
 }

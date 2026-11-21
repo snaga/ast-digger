@@ -15,8 +15,8 @@ import (
 )
 
 const (
-	testPythonSample = "../../testdata/python/sample.py"
-	testPythonDir    = "../../testdata/python"
+	testPythonSample = "testdata/python/sample.py"
+	testPythonDir    = "testdata/python"
 )
 
 // chdirTest temporarily changes the working directory to dir for the duration of the test.
@@ -91,6 +91,8 @@ func TestMCPServer_HandleExplore_Directory(t *testing.T) {
 // TestMCPServer_HandleExplore_File verifies that HandleExplore returns an AST skeleton
 // for single file paths.
 func TestMCPServer_HandleExplore_File(t *testing.T) {
+	chdirTest(t, "../..")
+
 	outliner := outline.NewOutliner()
 	server := NewServer("test-server", "1.0.0", outliner)
 	ctx := context.Background()
@@ -122,6 +124,8 @@ func TestMCPServer_HandleExplore_File(t *testing.T) {
 // TestMCPServer_HandleExplore_NotFound verifies that HandleExplore reports an error
 // when the specified path does not exist.
 func TestMCPServer_HandleExplore_NotFound(t *testing.T) {
+	chdirTest(t, "../..")
+
 	outliner := outline.NewOutliner()
 	server := NewServer("test-server", "1.0.0", outliner)
 	ctx := context.Background()
@@ -130,7 +134,7 @@ func TestMCPServer_HandleExplore_NotFound(t *testing.T) {
 		Params: mcp.CallToolParams{
 			Name: ToolNameExplore,
 			Arguments: map[string]any{
-				"path": "../../testdata/nonexistent_path_xyz",
+				"path": "testdata/nonexistent_path_xyz",
 			},
 		},
 	}
@@ -215,6 +219,8 @@ func TestMCPServer_HandleExplore_InvalidLimit(t *testing.T) {
 // TestMCPServer_HandleSymbol_ExtractSuccess verifies that HandleSymbol successfully extracts
 // targeted symbol implementation code.
 func TestMCPServer_HandleSymbol_ExtractSuccess(t *testing.T) {
+	chdirTest(t, "../..")
+
 	outliner := outline.NewOutliner()
 	server := NewServer("test-server", "1.0.0", outliner)
 	ctx := context.Background()
@@ -246,6 +252,8 @@ func TestMCPServer_HandleSymbol_ExtractSuccess(t *testing.T) {
 // TestMCPServer_HandleSymbol_LocateOnly verifies that HandleSymbol returns start and end line ranges
 // formatted as JSON when locate_only is enabled.
 func TestMCPServer_HandleSymbol_LocateOnly(t *testing.T) {
+	chdirTest(t, "../..")
+
 	outliner := outline.NewOutliner()
 	server := NewServer("test-server", "1.0.0", outliner)
 	ctx := context.Background()
@@ -288,6 +296,8 @@ func TestMCPServer_HandleSymbol_LocateOnly(t *testing.T) {
 // TestMCPServer_HandleSymbol_FollowImports verifies that HandleSymbol traces imported dependencies
 // when follow_imports is enabled.
 func TestMCPServer_HandleSymbol_FollowImports(t *testing.T) {
+	chdirTest(t, "../..")
+
 	outliner := outline.NewOutliner()
 	server := NewServer("test-server", "1.0.0", outliner)
 	ctx := context.Background()
@@ -319,6 +329,8 @@ func TestMCPServer_HandleSymbol_FollowImports(t *testing.T) {
 // TestMCPServer_HandleSymbol_NotFound verifies that HandleSymbol reports an error
 // when the requested symbol is not found in the file.
 func TestMCPServer_HandleSymbol_NotFound(t *testing.T) {
+	chdirTest(t, "../..")
+
 	outliner := outline.NewOutliner()
 	server := NewServer("test-server", "1.0.0", outliner)
 	ctx := context.Background()
@@ -345,6 +357,8 @@ func TestMCPServer_HandleSymbol_NotFound(t *testing.T) {
 // TestMCPServer_HandleSymbol_FileNotFound verifies that HandleSymbol reports an error
 // when the target source file does not exist.
 func TestMCPServer_HandleSymbol_FileNotFound(t *testing.T) {
+	chdirTest(t, "../..")
+
 	outliner := outline.NewOutliner()
 	server := NewServer("test-server", "1.0.0", outliner)
 	ctx := context.Background()
@@ -353,7 +367,7 @@ func TestMCPServer_HandleSymbol_FileNotFound(t *testing.T) {
 		Params: mcp.CallToolParams{
 			Name: ToolNameSymbol,
 			Arguments: map[string]any{
-				"file_path": "../../testdata/python/nonexistent_file.py",
+				"file_path": "testdata/python/nonexistent_file.py",
 				"symbol":    "Greeter",
 			},
 		},
@@ -375,6 +389,8 @@ func TestMCPServer_HandleSymbol_FileNotFound(t *testing.T) {
 // TestMCPServer_HandleSymbol_DirectoryError verifies that HandleSymbol rejects directories
 // passed as file_path.
 func TestMCPServer_HandleSymbol_DirectoryError(t *testing.T) {
+	chdirTest(t, "../..")
+
 	outliner := outline.NewOutliner()
 	server := NewServer("test-server", "1.0.0", outliner)
 	ctx := context.Background()
@@ -442,6 +458,7 @@ func TestMCPServer_HandleSymbol_MissingParams(t *testing.T) {
 // and appends a truncation notice when extracting symbols exceeding 300 lines.
 func TestMCPServer_HandleSymbol_Truncated(t *testing.T) {
 	tmpDir := t.TempDir()
+	chdirTest(t, tmpDir)
 	largePy := filepath.Join(tmpDir, "large.py")
 
 	var b strings.Builder
@@ -929,3 +946,88 @@ func TestMCPServer_HandleAudit_InvalidBase(t *testing.T) {
 		t.Fatalf("expected error result for invalid base revision")
 	}
 }
+
+// TestMCPServer_PathTraversalProtection verifies that ast_explore, ast_symbol, and ast_trace
+// reject file paths outside the current workspace root, preventing path traversal attacks.
+func TestMCPServer_PathTraversalProtection(t *testing.T) {
+	server := NewServer("test-server", "1.0.0", outline.NewOutliner())
+	ctx := context.Background()
+
+	traversalPaths := []string{
+		"../outside.txt",
+		"../../etc/passwd",
+		"..",
+	}
+
+	for _, p := range traversalPaths {
+		t.Run("Explore_"+p, func(t *testing.T) {
+			req := mcp.CallToolRequest{
+				Params: mcp.CallToolParams{
+					Name: ToolNameExplore,
+					Arguments: map[string]any{
+						"path": p,
+					},
+				},
+			}
+			res, err := server.HandleExplore(ctx, req)
+			if err != nil {
+				t.Fatalf("unexpected handler error: %v", err)
+			}
+			if !res.IsError {
+				t.Errorf("expected error for traversal path %q in HandleExplore, got success", p)
+			}
+			text := extractResultText(t, res)
+			if !strings.Contains(text, "outside workspace root") {
+				t.Errorf("expected 'outside workspace root' in error, got %q", text)
+			}
+		})
+
+		t.Run("Symbol_"+p, func(t *testing.T) {
+			req := mcp.CallToolRequest{
+				Params: mcp.CallToolParams{
+					Name: ToolNameSymbol,
+					Arguments: map[string]any{
+						"file_path": p,
+						"symbol":    "Dummy",
+					},
+				},
+			}
+			res, err := server.HandleSymbol(ctx, req)
+			if err != nil {
+				t.Fatalf("unexpected handler error: %v", err)
+			}
+			if !res.IsError {
+				t.Errorf("expected error for traversal path %q in HandleSymbol, got success", p)
+			}
+			text := extractResultText(t, res)
+			if !strings.Contains(text, "outside workspace root") {
+				t.Errorf("expected 'outside workspace root' in error, got %q", text)
+			}
+		})
+
+		t.Run("Trace_Definition_"+p, func(t *testing.T) {
+			req := mcp.CallToolRequest{
+				Params: mcp.CallToolParams{
+					Name: ToolNameTrace,
+					Arguments: map[string]any{
+						"action":    "definition",
+						"file_path": p,
+						"symbol":    "Dummy",
+					},
+				},
+			}
+			res, err := server.HandleTrace(ctx, req)
+			if err != nil {
+				t.Fatalf("unexpected handler error: %v", err)
+			}
+			if !res.IsError {
+				t.Errorf("expected error for traversal path %q in HandleTrace, got success", p)
+			}
+			text := extractResultText(t, res)
+			if !strings.Contains(text, "outside workspace root") {
+				t.Errorf("expected 'outside workspace root' in error, got %q", text)
+			}
+		})
+	}
+}
+
