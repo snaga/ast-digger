@@ -119,7 +119,7 @@ go build -ldflags "-s -w" -o ast-digger.exe ./cmd/ast-digger
 - `-s`: 記号表（シンボルテーブル）を削除
 - `-w`: DWARF デバッグ情報を削除
 
-> 💡 **削減効果の実測値**: 通常ビルド（約 22.8 MB）に対し、本フラグを付与することで **約 12.3 MB（約 46% 削減）** までバイナリサイズを大幅に軽量化できます。
+> 💡 **削減効果の実測値**: 全8言語パーサー（Snowflake SQL・Rust・Markdown含む）および内包型MCPサーバー統合後の現在、通常ビルド（約 41.0 MB）に対し、本フラグを付与することで **約 27.4 MB（約 33% / 14.3 MB 削減）** までバイナリサイズを大幅に軽量化できます（さらに ZIP 圧縮パッケージ化により **約 6.4 MB** まで圧縮されます）。
 
 
 ### 実行
@@ -755,20 +755,34 @@ AST-Digger MCP サーバーのツール定義（Tool Schemas）およびパラ�
 
 ## 📜 更新履歴
 
-### Unreleased (feat/mcp)
+### Unreleased
 
 - **内包型 Model Context Protocol (MCP) サーバー (`ast-digger mcp`)**:
   - `github.com/mark3labs/mcp-go` を統合し、単一バイナリ内包型で stdio トランスポート経由の JSON-RPC 2.0 MCP サーバーを実装。外部 Node.js ランタイムや依存パッケージ不要でスタンドアロン動作。
   - 標準入出力の完全隔離（Stdio Isolation）により、ログや標準エラー出力を stderr へ分離し、JSON-RPC 2.0 ストリームの汚染を防止。
-  - 従来の8コマンドを用途別に洗練・集約した **4大コアツール** をエージェント向けに公開:
+  - 用途別に洗練・集約した **4大コアツール** をエージェント向けに公開:
     - `ast_explore`: ディレクトリ探索（再帰木構造・主要シンボル一覧）およびファイル骨格（スケルトン）抽出。
     - `ast_symbol`: 特定シンボルの実装コード抽出、行範囲特定（`locate_only: true`）、依存追跡（`follow_imports: true`）。
-    - `ast_trace`: インポート定義元の特定（`mode: "definition"`）およびプロジェクト全体のシンボル参照検索（`mode: "references"`）。
+    - `ast_trace`: インポート定義元の特定（`action: "definition"`）およびプロジェクト全体のシンボル参照検索（`action: "references"`）。
     - `ast_audit`: Git差分に基づく意味的変更インパクト解析、Docstring監査、外部ドキュメント同期アドバイザリー。
   - **負のアフォーダンス設計 (Negative Affordance Design)**:
     - ツール定義（Tool Schemas）とパラメータ説明に負のアフォーダンス（アンチパターン抑止）を注入。エージェントが安易に `read_file` でファイルを丸呑みすることを防ぎ、最小限のコンテキスト探索を強制。
+  - **堅牢化 & セキュリティ境界防護**:
+    - `ast_symbol` における 300行切り詰め保護の適用（トークン最小化哲学の遵守）。
+    - `ast_explore` の負値 limit に対するスライス境界パニック防止ガード。
+    - ワークスペース外アクセスを遮断するパストラバーサル防護ガード（要件 H-7）。
+    - `change-impact` および `ast_audit` に対する Git フラグインジェクション防護ガード（要件 H-8）。
+- **Markdown ドキュメント構造解析のサポート**:
+  - `tree-sitter-markdown` を導入し、仕様書・設計書等の Markdown ドキュメントの見出し（`#`〜`######`）構造の階層抽出（`outline`）、特定セクションのピンポイント抽出（`symbol`）、行範囲特定（`locate`）に対応。
+- **依存シンボルの自動追跡抽出 (`symbol --follow-imports`)**:
+  - `symbol` コマンドに `--follow-imports` オプションを追加。対象シンボルが依存しているローカルモジュールのインポート定義元を自動追跡し、依存コード本文を一括連結して抽出。
+- **セルフインスペクション機能の強化 (`agent-context`)**:
+  - `agent-context` コマンドの出力スキーマに、対応言語一覧（`supported_languages`: 8言語）および対応拡張子一覧（`supported_extensions`: 11拡張子）を動的出力。
+- **アーキテクチャ境界の是正 (CGO Isolation)**:
+  - `internal/parser.GetLanguage` を新設し、tree-sitter の各言語 CGO 文法バインディングの直接依存を `internal/parser` パッケージに完全一元管理（ADR-0005 憲法準拠）。
 - **アーキテクチャ決定レコード (ADR)**:
   - `doc/adr/0007-builtin-mcp-server-and-tool-consolidation.md` を追加。
+  - `doc/adr/0005-accept-cgo-and-descope-cross-compilation.md` を更新。
 
 ### 0.3.1 (2026-10-21)
 
