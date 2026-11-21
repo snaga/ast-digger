@@ -710,17 +710,17 @@ AST-Digger MCP サーバーは、CLIの各サブコマンドを用途別に洗�
 
 | ツール名 | 説明 | 主な入力引数 | 対応CLI機能 |
 | :--- | :--- | :--- | :--- |
-| `ast_explore` | ディレクトリ構造またはファイル骨格（スケルトン）の探索 | `path` (必須), `limit` | `directory`, `outline` |
-| `ast_symbol` | 特定シンボルの実装コード抽出または行範囲特定 | `file_path` (必須), `symbol_path` (必須), `locate_only`, `follow_imports`, `limit_lines` | `symbol`, `locate` |
-| `ast_trace` | シンボルのインポート定義元解決または参照箇所検索 | `mode` (`definition` / `references`, 必須), `name` (必須), `file_path`, `project_root`, `limit` | `resolve-import`, `references` |
-| `ast_audit` | Git差分に基づく意味的変更インパクト解析・Docstring充足度評価 | `base` (デフォルト `HEAD`), `require_doc` (`exported` / `all` / `none`) | `change-impact` |
+| `ast_explore` | ディレクトリ構造またはファイル骨格（スケルトン）の探索 | `path` (必須), `recursive`, `limit` (デフォルト 50), `full` | `directory`, `outline` |
+| `ast_symbol` | 特定シンボルの実装コード抽出または行範囲特定 | `file_path` (必須), `symbol` (必須), `locate_only`, `follow_imports` | `symbol`, `locate` |
+| `ast_trace` | シンボルのインポート定義元解決または参照箇所検索 | `action` (`definition` / `references`, 必須), `symbol` (必須), `file_path`, `limit` (デフォルト 30) | `resolve-import`, `references` |
+| `ast_audit` | Git差分に基づく意味的変更インパクト解析・Docstring充足度評価 | `base` (デフォルト `HEAD`), `require_doc` (bool, デフォルト `true`), `max_complexity` (int, デフォルト `15`) | `change-impact` |
 
 ### 負のアフォーダンス設計 (Negative Affordance Design)
 
 AST-Digger MCP サーバーのツール定義（Tool Schemas）およびパラメータ説明には、**負のアフォーダンス（アンチパターン抑止）** が明確に組み込まれています。
 
 - **巨大ファイルの丸呑み防止**: 通常の `read_file` 等による全行一括読み込みではなく、`ast_explore` で骨格のみを把握し、`ast_symbol` で必要なシンボルのみをピンポイント抽出するよう誘導します。
-- **過度な参照検索の抑制**: `ast_trace` (references) ではデフォルト上限（50件）とページングヒントを提示し、巨大プロジェクトでのコンテキスト消費爆発を防ぎます。
+- **過度な参照検索の抑制**: `ast_trace` (references) ではデフォルト上限（30件）とページングヒントを提示し、巨大プロジェクトでのコンテキスト消費爆発を防ぎます。
 - **Docstring・意図同期の自己修復**: `ast_audit` を通じて、エージェント自身が変更直後にDocstring欠落や設計意図の乖離を自律的に検知・修正（Self-Healing）できます。
 
 ---

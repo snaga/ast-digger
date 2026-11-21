@@ -15,6 +15,7 @@ ast-digger/                    # リポジトリルート
 │   └── ast-digger/
 │       ├── main.go            # CLI エントリーポイント（cobra ルートコマンド登録）
 │       ├── agentcontext.go    # agent-context: スキーマ動的導出
+│       ├── impact.go          # change-impact: 変更インパクト解析・ガードレール制御
 │       ├── mcp.go             # mcp: stdio JSON-RPC MCPサーバー起動
 │       ├── output.go          # text/JSON出力共通ヘルパー
 │       ├── exitcode.go        # 終了コード判定
@@ -24,8 +25,15 @@ ast-digger/                    # リポジトリルート
 │   │   ├── server.go          # MCP サーバー初期化・ツール登録・stdio ループ
 │   │   ├── tools.go           # 4大コアツールの JSON Schema 定義および負のアフォーダンス設計
 │   │   └── handlers.go        # 各ツールリクエストを既存パッケージへ委譲するハンドラ
+│   ├── impact/                # 意味的変更インパクト解析・Docstring監査・外部意図アドバイザリー
+│   │   ├── git.go             # Git差分（git diff）取得・解析
+│   │   ├── analyzer.go        # ステートメント差分・循環複雑度差分の集計
+│   │   ├── symbols.go         # 変更シンボル特定・Docstring充足度判定
+│   │   ├── advisory.go        # モジュール境界変更・クロスモジュール変更アドバイザリー生成
+│   │   └── types.go           # インパクトレポート・サマリーデータ構造定義
 │   ├── parser/                # 各言語用 AST 解析パーサー
 │   │   ├── base.go            # Parser インターフェース、SymbolData/ReferenceData 型定義
+│   │   ├── factory.go         # 拡張子に基づくパーサーインスタンス生成
 │   │   ├── python.go          # Python 解析用パーサー
 │   │   ├── typescript.go      # TypeScript 解析用パーサー
 │   │   ├── golang.go          # Go 解析用パーサー（予約語との混同を避けるため golang.go と命名）
@@ -33,6 +41,7 @@ ast-digger/                    # リポジトリルート
 │   │   ├── javascript.go      # JavaScript 解析用パーサー
 │   │   ├── rust.go            # Rust 解析用パーサー
 │   │   ├── markdown.go        # Markdown ドキュメント解析用パーサー
+│   │   ├── markdown/          # tree-sitter-markdown CGO バインディング（ベンダー実装）
 │   │   ├── sql.go             # SQL (Snowflake Dialect) 解析用パーサー
 │   │   └── fuzzy.go           # シンボル候補提示ロジック
 │   ├── db/
@@ -62,6 +71,7 @@ ast-digger/                    # リポジトリルート
   - `internal/db/`: SQLite のテーブル操作および `mtime`/ハッシュによるキャッシュ差分スキャン処理を担当する。
   - `internal/outline/`: フォルダ構成やシンボル一覧のツリー表現、スケルトンコード生成を担当する。
   - `cmd/ast-digger/main.go`: CLIの入力パラメータのパース（cobra）、および各パッケージのオーケストレーション。
+  - `internal/impact/`: Git差分をAST構文木と照合し、物理行数ではなく純粋なステートメント増減および循環複雑度差分（Cyclomatic Complexity Delta）を算出する。また変更シンボルのDocstring充足度を監査し、外部ドキュメントやADRの同期を促すアドバイザリーを導出する。
   - `internal/mcp/`: Model Context Protocol に準拠した stdio サーバーを常駐実行し、エージェント向け 4大コアツール（`ast_explore`, `ast_symbol`, `ast_trace`, `ast_audit`）のリクエストを `internal/{outline,parser,impact}` の既存ロジックへ安全にディスパッチする。
   - `internal/apperr/`: エラー型と終了コードのマッピングを一元管理する。
 - **`internal/` パッケージの使用**: Go言語の `internal` ディレクトリ機構を活用し、外部から実装詳細への直接依存を防ぐ。外部公開が必要なAPIが生じた場合のみ `pkg/` の新設を検討する（現時点では不要）。

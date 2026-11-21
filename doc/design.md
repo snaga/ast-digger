@@ -42,8 +42,8 @@
 | 運用品質 | F-10 | エラー候補提示 | シンボル未検出時に、実在するシンボル名候補をエラーメッセージに含める。 | 要件 H-3 |
 | 運用品質 | F-11 | 終了コードタクソノミーと共通フラグ規約 | エラー種別ごとに一貫した終了コードを定義・適用し、`--json`（`-j`）規約に統一する。 | 要件 H-4, H-6 |
 | 運用品質 | F-12 | 単一バイナリ配布とスキルマニフェスト | CGO依存を許容し各プラットフォーム上のネイティブビルドで生成し、`SKILL.md` マニフェストを提供する。 | 要件 I-1, H-5 |
-| バックログ機能 | F-13 | 対応言語・拡張子一覧提示 (将来機能) | `agent-context` JSONメタデータに `supported_languages` / `supported_extensions` を追加。 | 要件 J-1 |
-| バックログ機能 | F-14 | 依存コード自動追跡 (将来機能) | `symbol` に `--follow-imports` オプションを追加し、依存先コード本文を一括抽出・返却する。 | 要件 J-2 |
+| 拡張機能 | F-13 | 対応言語・拡張子一覧提示 | `agent-context` JSONメタデータに `supported_languages` / `supported_extensions` を追加。 | 要件 J-1 |
+| 拡張機能 | F-14 | 依存コード自動追跡 | `symbol` に `--follow-imports` オプションを追加し、依存先コード本文を一括抽出・返却する。 | 要件 J-2 |
 | ドキュメント解析 | F-15 | Markdownドキュメント構造解析 | `tree-sitter-markdown` を用いて見出し階層（H1〜H6）、コードブロック（Mermaid等）、Frontmatterメタデータをパースし、スケルトン・ピンポイント抽出・セクション特定を行う。 | 要件 K-1, K-2, K-3, K-4 |
 | SQL構造解析 | F-16 | SQL/CTEアウトライン・データフロースケルトン生成 | `tree-sitter-sql` を用いてSnowflake/標準SQLのCTE（WITH句）、DAG依存関係（depends_on）、メインステートメントをパースし、軽量スケルトンを生成する。 | 要件 L-1 |
 | SQL構造解析 | F-17 | サブクエリ添字抽出とCTE依存追跡 | `subquery[0]` による名前なしサブクエリの特定・抽出、および `--follow-imports` による上流CTE依存コードの一括抽出を行う。 | 要件 L-2, L-3, L-4 |
@@ -283,13 +283,13 @@ sequenceDiagram
 ##### サブコマンド1: `outline`
 - **使用例**: `ast-digger outline <file_path> [--json] [--no-truncate]`
 - **入力**: `file_path`（string, 必須）
-- **処理概要**: 対象ファイル（`.py`/`.ts`/`.tsx`/`.go`/`.java`/`.js`/`.jsx`）をパースし、クラス・関数・構造体・インターフェース・enum等の定義シグネチャ・docstring/doc commentのみを抽出したスケルトンを生成する。テキスト出力は300行を超えると自動的に切り詰められる（`--no-truncate`で無効化可能。`--json`出力は常に無切り詰め）。
+- **処理概要**: 対象ファイル（`.py`/`.ts`/`.tsx`/`.go`/`.java`/`.js`/`.jsx`/`.rs`/`.md`/`.markdown`/`.sql`）をパースし、クラス・関数・構造体・インターフェース・enum等の定義シグネチャ・docstring/doc commentのみを抽出したスケルトンを生成する。テキスト出力は300行を超えると自動的に切り詰められる（`--no-truncate`で無効化可能。`--json`出力は常に無切り詰め）。
 - **出力**: 実装ボディが`...`または`{ /* ... */ }`に置換されたスケルトンコード文字列（テキスト）、または`--json`指定時はシンボル構造データの配列。
 
 ##### サブコマンド2: `symbol`
-- **使用例**: `ast-digger symbol <file_path> <symbol_path> [--json] [--no-truncate]`
+- **使用例**: `ast-digger symbol <file_path> <symbol_path> [--follow-imports] [--json] [--no-truncate]`
 - **入力**: `file_path`（string, 必須）, `symbol_path`（string, 必須 — 例: `MyClass.my_method`、Goの場合は`ReceiverType.MethodName`、Javaの場合は`ClassName.methodName`、JavaScriptの場合は`ClassName.methodName`（クラスメソッド）または`functionName`（トップレベル関数/アロー関数））
-- **処理概要**: 指定されたシンボルの実装コードを切り出して取得する。抽出コードが300行を超える場合はテキスト・JSONいずれの出力でも自動的に切り詰められる（`--no-truncate`で無効化可能）。シンボルが見つからない場合、既存シンボル名との類似度（Ratcliff/Obershelpアルゴリズム、上位5件）に基づく候補を終了コード4とともに提示する（要件H-3）。
+- **処理概要**: 指定されたシンボルの実装コードを切り出して取得する。`--follow-imports` 指定時は、当該シンボルが依存するローカルモジュールのインポート定義元を追跡し、依存コード本文を連結して返却する。抽出コードが300行を超える場合はテキスト・JSONいずれの出力でも自動的に切り詰められる（`--no-truncate`で無効化可能）。シンボルが見つからない場合、既存シンボル名との類似度（Ratcliff/Obershelpアルゴリズム、上位5件）に基づく候補を終了コード4とともに提示する（要件H-3）。
 - **出力**: 該当シンボルの実装コード文字列（`--json`指定時は、名前・種類・親・ファイルパス・開始/終了行・シグネチャ・docstring・コードを含む構造化JSON。切り詰め発生時は`truncated`/`total_lines`/`limit_lines`/`message`を追加）。
 
 ##### サブコマンド3: `references`
@@ -483,7 +483,7 @@ flowchart LR
 ```json
 {
   "name": "ast_audit",
-  "description": "Analyze semantic impact and code health of uncommitted git diffs. Audits cognitive complexity spikes, public API signature modifications, and missing docstrings. MUST be run before marking code implementation tasks as completed in SDD workflows.",
+  "description": "Analyze semantic impact and code health of uncommitted git diffs. Audits cyclomatic complexity spikes, public API signature modifications, and missing docstrings. MUST be run before marking code implementation tasks as completed in SDD workflows.",
   "parameters": {
     "type": "object",
     "properties": {
@@ -497,7 +497,7 @@ flowchart LR
       },
       "max_complexity": {
         "type": "integer",
-        "description": "Threshold for cognitive complexity statements per function before flagging warnings (default: 15)"
+        "description": "Threshold for cyclomatic complexity delta per file before flagging warnings (default: 15)"
       }
     }
   }
@@ -505,8 +505,8 @@ flowchart LR
 ```
 - **処理ロジック (IPO)**:
   - **Input**: `base`, `require_doc`, `max_complexity`
-  - **Processing**: `ChangeImpactAnalyzer.Analyze` をインプロセス実行。Git差分とASTノードを突合し、ステートメント増減、複雑度差分、Docstring欠落、ドキュメントアドバイザリーを導出。
-  - **Output**: 構造化サマリー（Markdown/JSON）。
+  - **Processing**: `impact` パッケージによる差分解析をインプロセス実行。Git差分とASTノードを突合し、ステートメント純増減、循環複雑度差分、Docstring欠落、外部ドキュメント同期アドバイザリーを導出。
+  - **Output**: 構造化サマリー（Markdownテキスト）。
 
 ---
 
@@ -625,17 +625,18 @@ classDiagram
 - **役割**: 各ターゲット言語のパーサーが実装すべき共通のAST解析インターフェース。
 - **メソッド一覧**:
   - `ParseFile(filePath string) ([]SymbolData, error)`: ファイルを構文解析し、シンボルリストを返す。
+  - `ParseBytes(content []byte, filePath string) ([]SymbolData, error)`: メモリ上バイト列を構文解析し、シンボルリストを返す。
   - `ExtractSymbol(filePath, symbolPath string) (SymbolData, error)`: 指定シンボルの定義位置・コードブロックを含む `SymbolData` を返す。
   - `ResolveImports(filePath, symbolName string) (defFilePath string, startLine int, err error)`: インポートされているシンボルの定義元を解決する。
   - `FindReferencesInFile(filePath, symbolName string) ([]ReferenceData, error)`: 単一ファイル内での参照箇所を探索する。
   - `GenerateSkeleton(filePath string) (string, error)`: 関数・メソッドのボディ部分を`...`（言語によっては`{ /* ... */ }`）に置換したスケルトンコードを生成する。シグネチャ・デコレータ・docstring/コメントは保持する。
 
-#### 2. `PythonParser` / `TypeScriptParser` / `GolangParser` / `JavaParser` / `JavaScriptParser` / `RustParser`（`internal/parser/{python,typescript,golang,java,javascript,rust}.go`）
+#### 2. `PythonParser` / `TypeScriptParser` / `GolangParser` / `JavaParser` / `JavaScriptParser` / `RustParser` / `MarkdownParser` / `SqlParser`（`internal/parser/*.go`）
 - **役割**: それぞれ対応する tree-sitter 文法を用いて `Parser` インターフェースを実装する具象型。
 - **`JavaParser`固有の留意点**: パッケージ宣言（`package_declaration`）からパッケージ名を取得し、`ResolveImports`での完全修飾名解決に使用する。`internal`パッケージ配下でも`Java`は予約語衝突がないため`java.go`のままファイル命名する（Goの`golang.go`のような回避命名は不要）。
 - **`JavaScriptParser`固有の留意点**: `TypeScriptParser`とほぼ同一のtree-sitterノード走査ロジックを型注釈なしの文法（`tree-sitter-javascript`）に対して適用する。共通化可能なロジック（例: 相対インポートパス解決、doc comment検出）が多いが、既存の`PythonParser`/`TypeScriptParser`/`GolangParser`と同様に1言語につき1つの独立した具象型として実装する方針を踏襲し、コード共有は必要最小限のprivateヘルパー関数の切り出しに留める。
 - **`RustParser`固有の留意点**: `struct_item`/`enum_item`/`function_item`/`trait_item`/`impl_item`/`mod_item` ノードを走査し、`struct`, `enum`, `function`, `trait`, `impl`, `module` として分類抽出する。`impl` ブロック内の関数はレシーバ型名（`impl MyStruct` 等）を `Parent` として扱い、`kind: "method"` として出力する。doc comment は `///`（outer doc）および `//!`（inner doc）を保持する。`use_declaration` から `use crate::...` や `use super::...` などのローカルモジュールインポートを解析し `ResolveImports` を行う。
-- **`MarkdownParser`固有の留意点**: `tree-sitter-markdown` を用いて見出し（H1〜H6）を `kind: "section"`、コードブロックを `kind: "code_block"`（インデックス付き `code_block:lang#index`）として抽出する。
+- **`MarkdownParser`固有の留意点**: `tree-sitter-markdown` を用いて見出し（H1〜H6）を `kind: "heading"`、コードブロックを `kind: "code_block"`（インデックス付き `code_block:lang#index`）として抽出する。
 - **`SqlParser`固有の留意点 (Snowflake Dialect)**: `tree-sitter-sql` を用いて `with_clause` 以下の各 `common_table_expression`（CTE）を `kind: "cte"` として抽出し、内包される `subquery` を出現順インデックス（`subquery[0]` / `subquery#0`）およびエイリアス名（`sub_alias`）で階層化（`cte_name/subquery[0]`）して抽出する。各CTEのクエリ本文から `FROM`/`JOIN`/`LATERAL FLATTEN` の参照テーブル・上流CTE名を解析し `depends_on` 依存リストを自動構築する。
 
 #### 3. `db.SymbolDatabase`（`internal/db/db.go`）
@@ -1063,24 +1064,24 @@ classDiagram
 
 ---
 
-## 🔮 将来機能拡張の設計方針 (Backlog)
+## 🔮 実装済み拡張機能の設計 (Extended Features)
 
-### F-13: 対応言語・拡張子一覧提示（セルフインスペクション強化）
-- `cmd/ast-digger/agentcontext.go`: `agent-context` コマンドの出力JSONトップレベルに、以下のメタデータフィールドを追加する。
+### F-13: 対応言語・拡張子一覧提示（セルフインスペクション機能）
+- `cmd/ast-digger/agentcontext.go`: `agent-context` コマンドの出力JSONトップレベルに、以下のメタデータフィールドを含む。
   ```json
   {
     "schema_version": "1.0",
     "cli_name": "ast-digger",
-    "supported_languages": ["python", "typescript", "golang", "java", "javascript"],
-    "supported_extensions": [".py", ".ts", ".tsx", ".go", ".java", ".js", ".jsx"],
+    "supported_languages": ["python", "typescript", "golang", "java", "javascript", "rust", "markdown", "sql"],
+    "supported_extensions": [".py", ".ts", ".tsx", ".go", ".java", ".js", ".jsx", ".rs", ".md", ".markdown", ".sql"],
     "commands": { ... }
   }
   ```
-- `cmd/ast-digger/main.go`: ルートコマンドおよび全サブコマンドの `--help` 説明文に対応言語一覧テキストを追加する。
+- `cmd/ast-digger/main.go`: ルートコマンドおよび全サブコマンドの `--help` 説明文に対応言語一覧テキストを含む。
 
 ### F-14: 依存コード自動追跡 (`--follow-imports`)
-- `cmd/ast-digger/main.go`: `symbol` サブコマンドに `--follow-imports` (bool) オプションを追加する。
-- `internal/outline/outline.go`: `ExtractSymbol` の抽出結果に対し、インポート文を走査し `ResolveImports` を連鎖的に呼び出して定義先コード本文を一括取得する。
+- `cmd/ast-digger/main.go`: `symbol` サブコマンドに `--follow-imports` (bool) オプションを提供する。
+- `internal/outline/outline.go`: `ExtractSymbolWithDependencies` により、指定シンボルの抽出結果からインポート文を走査し `ResolveImports` を連鎖的に呼び出してローカルモジュールの依存先コード本文を一括取得・連結する。
 - 循環参照防止のため訪問済みマップ（`visitedMap`）を保持し、再帰探索時の安全性を確保する。
 
 

@@ -14,10 +14,10 @@
 
 ## 🏗️ フレームワーク & ライブラリ
 
-| カテゴリ | ライブラリ候補 | 用途 / 選定理由 |
+| カテゴリ | ライブラリ / パッケージ | 用途 / 選定理由 |
 |:---|:---|:---|
-| tree-sitter バインディング | `github.com/tree-sitter/go-tree-sitter` または `github.com/smacker/go-tree-sitter` | tree-sitter コア（C実装）への Go バインディング。**CGO 必須**。 |
-| tree-sitter 文法 | `tree-sitter-python`, `tree-sitter-typescript`, `tree-sitter-go`, `tree-sitter-java`, `tree-sitter-javascript`, `tree-sitter-rust`, `tree-sitter-sql` の Go 向け文法パッケージ | 主要言語（コード/ドキュメント/SQL）をターゲットとして解析する。SQLはSnowflake/ANSI構文のCTEやサブクエリをサポートする。 |
+| tree-sitter バインディング | `github.com/tree-sitter/go-tree-sitter` (v0.25.0) | tree-sitter コア（C実装）への公式 Go バインディング。**CGO 必須**。 |
+| tree-sitter 文法 | 公式文法パッケージ群 (`tree-sitter-go`, `tree-sitter-python`, `tree-sitter-typescript`, `tree-sitter-java`, `tree-sitter-javascript`, `tree-sitter-rust`)、`github.com/mdovale/tree-sitter-sql` (go.mod replace)、および Markdown文法（`internal/parser/markdown` ベンダー実装） | 主要プログラミング言語、Markdownドキュメント、および Snowflake/ANSI SQL の構文木解析に使用。 |
 | CLI フレームワーク | `github.com/spf13/cobra` | サブコマンド・フラグ定義・ヘルプ生成に対応。`agent-context` のスキーマをコマンド定義から動的導出する設計がcobraのコマンドツリーAPIに依存するため採用。 |
 | SQLite ドライバ | `modernc.org/sqlite`（Pure Go, CGO不要） | キャッシュ・インデックス（シンボルデータベース）用。tree-sitter側は既にCGO必須だが、SQLite部分だけでもPure Go実装にしておくことで依存関係とビルドの複雑さを最小限に抑える。 |
 | JSON | 標準ライブラリ `encoding/json` | `--json` 出力のシリアライズに使用。追加依存を避ける。 |
@@ -37,6 +37,10 @@
 ## 📦 インフラ / プラットフォーム
 - **マルチプラットフォーム対応（ネイティブビルド）**: Windows / macOS / Linux 向けのバイナリは、各プラットフォーム上での `go build` によるネイティブビルドで生成する。CGO依存を許容する方針決定に伴い、`GOOS`/`GOARCH` を切り替えたクロスコンパイルはスコープ外とする。
 - **配置場所**: Go実装一式はリポジトリルート直下に配置する。
+
+## 🏷️ ビルド時パラメータ注入規約 (-ldflags)
+- **バージョン注入**: 配布用バイナリビルドまたは `Makefile` 経由でのビルド時、`-ldflags "-X main.version=$(VERSION)"`（ファイルサイズ削減時は `-ldflags "-s -w -X main.version=$(VERSION)"`）を指定し、`cmd/ast-digger/main.go` の `version` 変数へバージョン文字列を注入する。
+- **静的リンク指定**: Linux 環境でのゼロ依存単一バイナリ生成時は `-ldflags '-linkmode external -extldflags "-static" -X main.version=$(VERSION)'` を指定する。
 
 ---
 

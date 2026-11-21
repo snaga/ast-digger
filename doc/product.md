@@ -28,7 +28,11 @@ AIエージェントが大規模なコードベースを探索する際、ファ
    - `agent-context` の完全性、出力上限制御、エラー候補提示、終了コードタクソノミー、`SKILL.md`、`--json` 統一を標準搭載する。
 7. **SQL・CTEデータフロー構造解析 (SQL & CTE Flow Analyzer - Snowflake Dialect)**:
    - 数千行に及ぶ巨大なバッチSQL（Snowflake/DWH）を構文解析し、CTE（Common Table Expression）の定義階層、DAG（依存グラフ）、サブクエリ添字（`subquery[0]`）、および参照テーブルを抽出し、リファクタリング対象のCTEとその上流依存のみをピンポイントで取得可能にする。
-8. **統合エージェントハーネス用MCPサーバー機能 (Built-in MCP Server & Tool Consolidation)**:
+8. **Markdown ドキュメント構造解析 (Markdown Outline & Section Extractor)**:
+   - 設計書や仕様書などのMarkdownドキュメントの見出し（`#`〜`######`）階層を解析し、スケルトン構造抽出、特定セクションのピンポイント抽出、行範囲特定（`locate`）をサポートし、LLMエージェントによるドキュメント探索コンテキストを最小化する。
+9. **意味的変更インパクト解析 & Docstring監査 (Semantic Change Impact & Advisory)**:
+   - Git差分をASTと照合し、物理行数ではなく純粋なステートメント純増減および循環複雑度差分（Cyclomatic Complexity Delta）を算出する。変更シンボルのDocstring充足度を監査し、モジュール境界やクロスモジュール変更に応じた外部ドキュメント・ADRの同期アドバイザリーを導出する。
+10. **統合エージェントハーネス用MCPサーバー機能 (Built-in MCP Server & Tool Consolidation)**:
    - エージェントがCLI指示をスルーして `read_file` に退行する認知力学的課題を打破するため、Model Context Protocol (MCP) に準拠した stdio サーバー機能（`ast-digger mcp`）を単一バイナリ内に内包する。既存コマンドを「構造把握 (`ast_explore`)」「局所抽出 (`ast_symbol`)」「依存追跡 (`ast_trace`)」「品質検証 (`ast_audit`)」の4大コアツールに集約し、負のアフォーダンス設計によりエージェントによる確実な構文探索を強制する（[ADR-0007](./adr/0007-builtin-mcp-server-and-tool-consolidation.md) 参照）。
 
 ## 🚀 ビジネス目標 / ゴール
