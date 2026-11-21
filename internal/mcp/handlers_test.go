@@ -175,6 +175,43 @@ func TestMCPServer_HandleExplore_MissingPath(t *testing.T) {
 	}
 }
 
+// TestMCPServer_HandleExplore_InvalidLimit verifies that HandleExplore safely falls back
+// to the default limit when passed zero or negative limit values without panicking.
+func TestMCPServer_HandleExplore_InvalidLimit(t *testing.T) {
+	chdirTest(t, "../..")
+
+	outliner := outline.NewOutliner()
+	server := NewServer("test-server", "1.0.0", outliner)
+	ctx := context.Background()
+
+	testLimits := []int{0, -1, -50}
+	for _, lim := range testLimits {
+		req := mcp.CallToolRequest{
+			Params: mcp.CallToolParams{
+				Name: ToolNameExplore,
+				Arguments: map[string]any{
+					"path":      "testdata/python",
+					"recursive": false,
+					"limit":     lim,
+				},
+			},
+		}
+
+		res, err := server.HandleExplore(ctx, req)
+		if err != nil {
+			t.Fatalf("unexpected handler error for limit=%d: %v", lim, err)
+		}
+		if res.IsError {
+			t.Fatalf("expected success for limit=%d, got error: %s", lim, extractResultText(t, res))
+		}
+
+		text := extractResultText(t, res)
+		if !strings.Contains(text, "sample.py") {
+			t.Errorf("expected directory tree to contain 'sample.py' for limit=%d, got:\n%s", lim, text)
+		}
+	}
+}
+
 // TestMCPServer_HandleSymbol_ExtractSuccess verifies that HandleSymbol successfully extracts
 // targeted symbol implementation code.
 func TestMCPServer_HandleSymbol_ExtractSuccess(t *testing.T) {
@@ -398,6 +435,51 @@ func TestMCPServer_HandleSymbol_MissingParams(t *testing.T) {
 	res2, err := server.HandleSymbol(ctx, req2)
 	if err != nil || !res2.IsError {
 		t.Errorf("expected error for missing symbol")
+	}
+}
+
+// TestMCPServer_HandleSymbol_Truncated verifies that HandleSymbol applies truncateLines
+// and appends a truncation notice when extracting symbols exceeding 300 lines.
+func TestMCPServer_HandleSymbol_Truncated(t *testing.T) {
+	tmpDir := t.TempDir()
+	largePy := filepath.Join(tmpDir, "large.py")
+
+	var b strings.Builder
+	b.WriteString("def large_function():\n")
+	for i := 0; i < 350; i++ {
+		fmt.Fprintf(&b, "    x_%d = %d\n", i, i)
+	}
+	b.WriteString("    return True\n")
+
+	if err := os.WriteFile(largePy, []byte(b.String()), 0600); err != nil {
+		t.Fatalf("failed to write test file: %v", err)
+	}
+
+	outliner := outline.NewOutliner()
+	server := NewServer("test-server", "1.0.0", outliner)
+	ctx := context.Background()
+
+	req := mcp.CallToolRequest{
+		Params: mcp.CallToolParams{
+			Name: ToolNameSymbol,
+			Arguments: map[string]any{
+				"file_path": largePy,
+				"symbol":    "large_function",
+			},
+		},
+	}
+
+	res, err := server.HandleSymbol(ctx, req)
+	if err != nil {
+		t.Fatalf("unexpected handler error: %v", err)
+	}
+	if res.IsError {
+		t.Fatalf("expected success, got error result: %s", extractResultText(t, res))
+	}
+
+	code := extractResultText(t, res)
+	if !strings.Contains(code, "=== TRUNCATED") {
+		t.Errorf("expected code to be truncated with TRUNCATED marker, got:\n%s", code)
 	}
 }
 

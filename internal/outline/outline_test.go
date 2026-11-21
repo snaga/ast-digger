@@ -641,7 +641,7 @@ func TestOutliner_BuildDirectoryTree_LimitTruncation(t *testing.T) {
 	if !strings.Contains(tree, "... (output truncated due to limit)") {
 		t.Errorf("expected truncation marker in output, got:\n%s", tree)
 	}
-	if !strings.Contains(tree, "Hint: Use '--limit N' or '--filter' to scope down your search.") {
+	if !strings.Contains(tree, "Hint: Use '--limit N' or specify a subdirectory to narrow down results.") {
 		t.Errorf("expected truncation hint in output, got:\n%s", tree)
 	}
 

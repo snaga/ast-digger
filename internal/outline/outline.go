@@ -563,7 +563,7 @@ func (o *Outliner) BuildDirectoryTree(dirPath string, recursive bool, limit int)
 
 	if isTruncated {
 		lines = append(lines, "... (output truncated due to limit)")
-		lines = append(lines, "Hint: Use '--limit N' or '--filter' to scope down your search.")
+		lines = append(lines, "Hint: Use '--limit N' or specify a subdirectory to narrow down results.")
 	}
 
 	return strings.Join(lines, "\n"), nil

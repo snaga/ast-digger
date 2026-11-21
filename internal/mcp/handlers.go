@@ -31,6 +31,9 @@ func (s *MCPServer) HandleExplore(ctx context.Context, request mcp.CallToolReque
 
 	recursive := request.GetBool("recursive", true)
 	limit := request.GetInt("limit", 50)
+	if limit <= 0 {
+		limit = 50
+	}
 	full := request.GetBool("full", false)
 
 	fi, err := os.Stat(path)
@@ -144,6 +147,7 @@ func (s *MCPServer) HandleSymbol(ctx context.Context, request mcp.CallToolReques
 			code = b.String()
 		}
 
+		code, _ = truncateLines(code, 300)
 		return mcp.NewToolResultText(code), nil
 	}
 
@@ -157,6 +161,7 @@ func (s *MCPServer) HandleSymbol(ctx context.Context, request mcp.CallToolReques
 		code = *symData.Code
 	}
 
+	code, _ = truncateLines(code, 300)
 	return mcp.NewToolResultText(code), nil
 }
 
