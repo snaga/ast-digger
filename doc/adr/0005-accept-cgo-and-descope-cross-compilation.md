@@ -13,7 +13,7 @@ tree-sitterのコア実装はC言語で書かれており、現時点で実用�
 1. CGO依存を受け入れる。tree-sitterバインディングの利用を優先し、Pure-Go tree-sitter実装への依存は要求しない。
 2. `GOOS`/`GOARCH` を切り替えたクロスコンパイルは、本プロジェクトのスコープ外とする。
 3. Windows/macOS/Linux向けバイナリは、各プラットフォーム上でのネイティブビルド（`go build`）によって個別に生成する運用とする。
-4. CGO依存箇所は `internal/parser` パッケージ内に閉じ込め、他レイヤー（`internal/db`, `internal/outline`, `cmd/ast-digger`）から直接参照させない設計とし、将来的なPure-Go実装への移行やクロスコンパイル要件の再検討に備える。
+4. CGO依存（各言語のtree-sitter文法バインディング群）は `internal/parser` パッケージ内に一元管理・閉じ込め、他レイヤー（`internal/db`, `internal/outline`, `cmd/ast-digger`）から直接インポートさせない設計とする。変更インパクト解析を担当する `internal/impact` も言語バインディングを直接参照せず、`internal/parser` が提供する言語ファサード（`parser.GetLanguage`）経由で言語インスタンスを取得する構成とし、将来的なPure-Go実装への移行やクロスコンパイル要件の再検討に備える。
 
 ## 影響 (Consequences)
 - **メリット**:

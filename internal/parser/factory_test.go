@@ -96,3 +96,70 @@ func TestParser_ParseFile_NonExistent(t *testing.T) {
 	}
 }
 
+// TestGetLanguage tests that GetLanguage returns the expected Tree-sitter Language
+// instance for valid inputs and an error for unsupported file extensions.
+func TestGetLanguage(t *testing.T) {
+	tests := []struct {
+		input   string
+		wantErr bool
+	}{
+		{"go", false},
+		{".go", false},
+		{"main.go", false},
+		{"golang", false},
+		{"py", false},
+		{".py", false},
+		{"script.py", false},
+		{"python", false},
+		{"ts", false},
+		{".ts", false},
+		{"index.ts", false},
+		{"typescript", false},
+		{"tsx", false},
+		{".tsx", false},
+		{"App.tsx", false},
+		{"js", false},
+		{".js", false},
+		{"index.js", false},
+		{"jsx", false},
+		{".jsx", false},
+		{"mjs", false},
+		{"cjs", false},
+		{"rs", false},
+		{".rs", false},
+		{"lib.rs", false},
+		{"rust", false},
+		{"java", false},
+		{".java", false},
+		{"Main.java", false},
+		{"sql", false},
+		{".sql", false},
+		{"query.sql", false},
+		{"unsupported", true},
+		{".unknown", true},
+		{"file.txt", true},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.input, func(t *testing.T) {
+			lang, err := GetLanguage(tc.input)
+			if tc.wantErr {
+				if err == nil {
+					t.Fatalf("GetLanguage(%q) expected error, got nil", tc.input)
+				}
+				if lang != nil {
+					t.Fatalf("GetLanguage(%q) expected nil language on error, got %v", tc.input, lang)
+				}
+			} else {
+				if err != nil {
+					t.Fatalf("GetLanguage(%q) unexpected error: %v", tc.input, err)
+				}
+				if lang == nil {
+					t.Fatalf("GetLanguage(%q) expected non-nil language", tc.input)
+				}
+			}
+		})
+	}
+}
+
+
