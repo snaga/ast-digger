@@ -755,7 +755,7 @@ AST-Digger MCP サーバーのツール定義（Tool Schemas）およびパラ�
 
 ## 📜 更新履歴
 
-### Unreleased
+### 0.4.0 (2026-11-22)
 
 - **内包型 Model Context Protocol (MCP) サーバー (`ast-digger mcp`)**:
   - `github.com/mark3labs/mcp-go` を統合し、単一バイナリ内包型で stdio トランスポート経由の JSON-RPC 2.0 MCP サーバーを実装。外部 Node.js ランタイムや依存パッケージ不要でスタンドアロン動作。
