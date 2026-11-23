@@ -487,7 +487,7 @@ func truncateLines(text string, limit int) (string, bool) {
 
 	middle := []string{
 		fmt.Sprintf("    # === TRUNCATED (%d lines omitted) ===", truncatedCount),
-		"    # === Pass full=true to print full output ===",
+		"    # === For ast_explore pass full=true; for ast_symbol use locate_only=true or target a sub-symbol ===",
 	}
 
 	result := make([]string, 0, len(topLines)+len(middle)+len(bottomLines))

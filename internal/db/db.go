@@ -246,6 +246,7 @@ func createSchema(conn *sql.DB) error {
 		);`,
 		`CREATE INDEX IF NOT EXISTS idx_symbols_name ON symbols(name);`,
 		`CREATE INDEX IF NOT EXISTS idx_symbols_file_path ON symbols(file_path);`,
+		`CREATE INDEX IF NOT EXISTS idx_files_language ON files(language);`,
 	}
 	for _, stmt := range stmts {
 		if _, err := conn.Exec(stmt); err != nil {

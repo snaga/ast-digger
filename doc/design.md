@@ -30,7 +30,7 @@
 
 | 機能カテゴリ | 機能ID | 機能名 | 概要 | 対応要件ID |
 |:------------|:-------|:------|:-----|:----------|
-| アウトライン抽出 | F-1 | ファイルアウトライン生成 | 指定されたファイル(Python/TS/Go/Java/JavaScript/Rust)の構文解析を行い、クラス/関数/構造体/インターフェース/enum/impl/traitのスケルトンコードを生成する。 | 要件 A-1 |
+| アウトライン抽出 | F-1 | ファイルアウトライン生成 | 指定されたファイル(Python/TS/Go/Java/JavaScript/Rust/Markdown/SQL)の構文解析を行い、クラス/関数/構造体/インターフェース/enum/impl/trait/見出し/CTEのスケルトンコードを生成する。 | 要件 A-1 |
 | ピンポイント抽出 | F-2 | シンボルコード抽出 | 指定されたシンボルの実装コードをASTからピンポイントで抽出する。 | 要件 B-1 |
 | 参照・依存探索 | F-3 | シンボル参照探索 (Callers) | プロジェクト全体から、指定されたシンボル名が呼び出されている箇所を構文レベルで探索する。 | 要件 C-1 |
 | 参照・依存探索 | F-4 | 依存インポート解決 (Callees) | 指定したファイル内でインポートされているシンボルの定義元ファイルパスと開始行を解決する。 | 要件 D-1 |
@@ -40,7 +40,7 @@
 | 自己内省・運用 | F-8 | シンボル位置特定 | 指定したシンボルの定義位置のみを軽量に取得する。 | 要件 G-1 |
 | 運用品質 | F-9 | 大規模出力の上限制御 | `references` の `--limit`、`outline`/`symbol` の自動切り詰めと `--no-truncate`。 | 要件 H-2 |
 | 運用品質 | F-10 | エラー候補提示 | シンボル未検出時に、実在するシンボル名候補をエラーメッセージに含める。 | 要件 H-3 |
-| 運用品質 | F-11 | 終了コードタクソノミーと共通フラグ規約 | エラー種別ごとに一貫した終了コードを定義・適用し、`--json`（`-j`）規約に統一する。 | 要件 H-4, H-6 |
+| 運用品質 | F-11 | 終了コードタクソノミーと共通フラグ規約 | エラー種別ごとに一貫した終了コードを定義・適用し、`--json`（`-j`）規約に統一する。 | 要件 H-4, H-6, H-9, H-10 |
 | 運用品質 | F-12 | 単一バイナリ配布とスキルマニフェスト | CGO依存を許容し各プラットフォーム上のネイティブビルドで生成し、`SKILL.md` マニフェストを提供する。 | 要件 I-1, H-5 |
 | 拡張機能 | F-13 | 対応言語・拡張子一覧提示 | `agent-context` JSONメタデータに `supported_languages` / `supported_extensions` を追加。 | 要件 J-1 |
 | 拡張機能 | F-14 | 依存コード自動追跡 | `symbol` に `--follow-imports` オプションを追加し、依存先コード本文を一括抽出・返却する。 | 要件 J-2 |
@@ -49,7 +49,7 @@
 | SQL構造解析 | F-17 | サブクエリ添字抽出とCTE依存追跡 | `subquery[0]` による名前なしサブクエリの特定・抽出、および `--follow-imports` による上流CTE依存コードの一括抽出を行う。 | 要件 L-2, L-3, L-4 |
 | SQL構造解析 | F-18 | Icepick連携最適化リファクタリング探索 | `icepick` の診断結果（SNOW-002, SNOW-005, SNOW-007等）に基づく重複スキャン集約、相関サブクエリJOIN化、CTE外出しのピンポイント外科手術的探索を行う。 | 要件 L-5, L-6 |
 | SQL構造解析 | F-19 | ビュー定義（CREATE VIEW）認識と警告抑止 | `CREATE [OR REPLACE] [SECURE / MATERIALIZED] VIEW` や `CREATE DYNAMIC TABLE` から名称を抽出してシンボル登録し、同一ファイルの警告連打を抑止する。 | 要件 L-7 |
-| 変更インパクト解析 | F-20 | 意味的変更インパクト解析と意図・ドキュメント充足度評価 | Git差分とAST解析を組み合わせ、構文ステートメント増分、制御複雑度、シンボルDocstring充足度、外部ドキュメント同期アドバイザリーを構造化出力する。 | 要件 M-1, M-2, M-3, M-4, H-8 |
+| 変更インパクト解析 | F-20 | 意味的変更インパクト解析と意図・ドキュメント充足度評価 | Git差分とAST解析を組み合わせ、構文ステートメント純増減、制御複雑度、シンボルDocstring充足度、外部ドキュメント同期アドバイザリーを構造化出力する。 | 要件 M-1, M-2, M-3, M-4, H-8, H-9 |
 | エージェントハーネス・MCP | F-21 | stdio MCPサーバー起動 | 単一バイナリ内で Model Context Protocol (MCP) の stdio JSON-RPC サーバーを起動し、エージェント環境と直接接続する。 | 要件 N-1, N-4 |
 | エージェントハーネス・MCP | F-22 | 4大コアツール統合ディスパッチ | 8種のコマンドを構造把握（`ast_explore`）、局所抽出（`ast_symbol`）、依存追跡（`ast_trace`）、品質検証（`ast_audit`）の4ツールに集約し、インプロセスで高速実行する。 | 要件 N-2, N-4, H-7 |
 | エージェントハーネス・MCP | F-23 | 負のアフォーダンス設計 (Description Hacking) | ツール定義スキーマに制約文を埋め込み、事前学習バイアスによる `read_file` への安易な逃避を抑止する。 | 要件 N-3 |
@@ -184,6 +184,9 @@ graph TD
         C6 --> D6["go-tree-sitter + tree-sitter-javascript"]
         C7 --> D7["go-tree-sitter + tree-sitter-rust"]
         C8 --> D8["go-tree-sitter + tree-sitter-markdown"]
+        C9["SqlParser: parser/sql.go"]
+        C --> C9
+        C9 --> D9["go-tree-sitter + tree-sitter-sql"]
     end
     subgraph cache["Cache Layer (internal/db, Pure Go)"]
         B --> E["SymbolDatabase: db/db.go"]
@@ -197,6 +200,7 @@ graph TD
         C6 --> G6["Target JS/JSX Files"]
         C7 --> G7["Target Rust Files"]
         C8 --> G8["Target Markdown Files"]
+        C9 --> G9["Target SQL Files"]
     end
 ```
 
@@ -227,7 +231,7 @@ sequenceDiagram
     participant FS as File System
 
     CLI->>OUT: BuildDirectoryTree(dirPath)
-    OUT->>FS: 対象ファイル(py, ts, tsx, go, java, js, jsx)と mtime/hash を取得
+    OUT->>FS: 対象ファイル(py, ts, tsx, go, java, js, jsx, rs, md, sql)と mtime/hash を取得
     OUT->>DB: GetAllFiles() で保存済み mtime/hash/language を取得
     Note over OUT: 変更があったファイルを抽出 (差分検知)
 
@@ -553,6 +557,7 @@ classDiagram
     class Parser {
         <<interface>>
         +ParseFile(filePath string) ([]SymbolData, error)
+        +ParseBytes(content []byte, filePath string) ([]SymbolData, error)
         +ExtractSymbol(filePath string, symbolPath string) (SymbolData, error)
         +ResolveImports(filePath string, symbolName string) (string, int, error)
         +FindReferencesInFile(filePath string, symbolName string) ([]ReferenceData, error)
@@ -560,6 +565,7 @@ classDiagram
     }
     class PythonParser {
         +ParseFile(filePath string) ([]SymbolData, error)
+        +ParseBytes(content []byte, filePath string) ([]SymbolData, error)
         +ExtractSymbol(filePath string, symbolPath string) (SymbolData, error)
         +ResolveImports(filePath string, symbolName string) (string, int, error)
         +FindReferencesInFile(filePath string, symbolName string) ([]ReferenceData, error)
@@ -567,6 +573,7 @@ classDiagram
     }
     class TypeScriptParser {
         +ParseFile(filePath string) ([]SymbolData, error)
+        +ParseBytes(content []byte, filePath string) ([]SymbolData, error)
         +ExtractSymbol(filePath string, symbolPath string) (SymbolData, error)
         +ResolveImports(filePath string, symbolName string) (string, int, error)
         +FindReferencesInFile(filePath string, symbolName string) ([]ReferenceData, error)
@@ -574,6 +581,7 @@ classDiagram
     }
     class GolangParser {
         +ParseFile(filePath string) ([]SymbolData, error)
+        +ParseBytes(content []byte, filePath string) ([]SymbolData, error)
         +ExtractSymbol(filePath string, symbolPath string) (SymbolData, error)
         +ResolveImports(filePath string, symbolName string) (string, int, error)
         +FindReferencesInFile(filePath string, symbolName string) ([]ReferenceData, error)
@@ -581,6 +589,7 @@ classDiagram
     }
     class JavaParser {
         +ParseFile(filePath string) ([]SymbolData, error)
+        +ParseBytes(content []byte, filePath string) ([]SymbolData, error)
         +ExtractSymbol(filePath string, symbolPath string) (SymbolData, error)
         +ResolveImports(filePath string, symbolName string) (string, int, error)
         +FindReferencesInFile(filePath string, symbolName string) ([]ReferenceData, error)
@@ -588,6 +597,31 @@ classDiagram
     }
     class JavaScriptParser {
         +ParseFile(filePath string) ([]SymbolData, error)
+        +ParseBytes(content []byte, filePath string) ([]SymbolData, error)
+        +ExtractSymbol(filePath string, symbolPath string) (SymbolData, error)
+        +ResolveImports(filePath string, symbolName string) (string, int, error)
+        +FindReferencesInFile(filePath string, symbolName string) ([]ReferenceData, error)
+        +GenerateSkeleton(filePath string) (string, error)
+    }
+    class RustParser {
+        +ParseFile(filePath string) ([]SymbolData, error)
+        +ParseBytes(content []byte, filePath string) ([]SymbolData, error)
+        +ExtractSymbol(filePath string, symbolPath string) (SymbolData, error)
+        +ResolveImports(filePath string, symbolName string) (string, int, error)
+        +FindReferencesInFile(filePath string, symbolName string) ([]ReferenceData, error)
+        +GenerateSkeleton(filePath string) (string, error)
+    }
+    class MarkdownParser {
+        +ParseFile(filePath string) ([]SymbolData, error)
+        +ParseBytes(content []byte, filePath string) ([]SymbolData, error)
+        +ExtractSymbol(filePath string, symbolPath string) (SymbolData, error)
+        +ResolveImports(filePath string, symbolName string) (string, int, error)
+        +FindReferencesInFile(filePath string, symbolName string) ([]ReferenceData, error)
+        +GenerateSkeleton(filePath string) (string, error)
+    }
+    class SqlParser {
+        +ParseFile(filePath string) ([]SymbolData, error)
+        +ParseBytes(content []byte, filePath string) ([]SymbolData, error)
         +ExtractSymbol(filePath string, symbolPath string) (SymbolData, error)
         +ResolveImports(filePath string, symbolName string) (string, int, error)
         +FindReferencesInFile(filePath string, symbolName string) ([]ReferenceData, error)
@@ -607,7 +641,18 @@ classDiagram
         +FindReferences(projectRoot string, symbolName string) ([]ReferenceData, error)
         +ListSymbols(filePath string) ([]SymbolData, error)
         +ExtractSymbol(filePath string, symbolPath string) (SymbolData, error)
+        +ExtractSymbolWithDependencies(filePath string, symbolPath string, resolveLocalOnly bool) (SymbolWithDependencies, error)
         +ResolveImports(filePath string, symbolName string) (string, int, error)
+    }
+    class ChangeImpactAnalyzer {
+        +AnalyzeImpact(baseRef string, requireDoc string, maxStatements int, maxComplexity int) (ImpactReport, error)
+    }
+    class MCPServer {
+        +ServeStdio() error
+        +HandleExplore(ctx context.Context, req CallToolRequest) (CallToolResult, error)
+        +HandleSymbol(ctx context.Context, req CallToolRequest) (CallToolResult, error)
+        +HandleTrace(ctx context.Context, req CallToolRequest) (CallToolResult, error)
+        +HandleAudit(ctx context.Context, req CallToolRequest) (CallToolResult, error)
     }
 
     PythonParser ..|> Parser
@@ -615,8 +660,14 @@ classDiagram
     GolangParser ..|> Parser
     JavaParser ..|> Parser
     JavaScriptParser ..|> Parser
+    RustParser ..|> Parser
+    MarkdownParser ..|> Parser
+    SqlParser ..|> Parser
     Outliner --> Parser
     Outliner --> SymbolDatabase
+    ChangeImpactAnalyzer --> Parser
+    MCPServer --> Outliner
+    MCPServer --> ChangeImpactAnalyzer
 ```
 
 ### 主要コンポーネント設計
@@ -654,19 +705,19 @@ classDiagram
 
 #### 5. 主要データ構造の定義（`internal/parser/base.go`）
 - **`SymbolData`（struct）**:
-  - `Name string`
-  - `Kind string`（"class", "function", "method", "interface", "struct", "type"）
-  - `Parent *string`
-  - `FilePath *string`
-  - `StartLine int`
-  - `EndLine int`
-  - `Signature *string`
-  - `Docstring *string`
-  - `Code *string`
+  - `Name string json:"name"`
+  - `Kind string json:"kind"`（"class", "function", "method", "interface", "struct", "type", "enum", "trait", "impl", "module", "heading", "code_block", "frontmatter", "cte", "subquery", "statement"）
+  - `Parent *string json:"parent"`
+  - `FilePath *string json:"file_path"`
+  - `StartLine int json:"start_line"`
+  - `EndLine int json:"end_line"`
+  - `Signature *string json:"signature"`
+  - `Docstring *string json:"docstring"`
+  - `Code *string json:"code"`
 - **`ReferenceData`（struct）**:
-  - `FilePath string`
-  - `LineNumber int`
-  - `LineContent string`
+  - `FilePath string json:"file_path"`
+  - `LineNumber int json:"line_number"`
+  - `LineContent string json:"snippet"`
 
 ## 各機能の詳細設計
 
@@ -875,7 +926,7 @@ sequenceDiagram
     autonumber
     actor Agent as コーディングエージェント / 人間
     participant CLI as ast-digger change-impact
-    participant Git as Git Client (go-git / CLI)
+    participant Git as Git Client (CLI: git diff / git show)
     participant Outliner as outline.Outliner
     participant Parser as parser.Parser (Tree-sitter)
 
@@ -989,8 +1040,8 @@ sequenceDiagram
 
 #### 6. メモリ上ソースコードパースと実装アーキテクチャ方針
 - **Git 差分元のバイト列パース**:
-  - `change-impact` ではコミットオブジェクトやインデックス（`git show <base>:<path>`）から変更前のソースコードを取得するため、ファイルパスだけでなくメモリ上のバイト列（`[]byte`）を直接 Tree-sitter AST 解析に渡す必要がある。
-  - 既存の各言語パーサー（`GolangParser`, `PythonParser`, `TypeScriptParser` 等）に `ParseBytes(content []byte, filePath string) ([]SymbolData, error)` を導入するか、差分ノード走査専用の内部アナライザー（`internal/impact`）を新設してTree-sitter LanguageバインディングからASTツリーを直接走査・比較する方針を採用する。
+  - `change-impact` ではコミットオブジェクトやインデックス（`git show <base>:<path>`）から変更前のソースコードを取得するため、ファイルパスだけでなくメモリ上のバイト列（`[]byte`）を直接 Tree-sitter AST 解析に渡す。
+  - 既存の全具象パーサー（Go, Python, TS, Java, JS, Rust, Markdown, SQL）に `ParseBytes(content []byte, filePath string) ([]SymbolData, error)` を実装し、差分ノード走査アナライザー（`internal/impact`）が `parser.GetLanguage` から Tree-sitter AST ツリーを直接走査・比較するアーキテクチャを採用している。
 
 ---
 

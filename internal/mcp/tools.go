@@ -89,7 +89,7 @@ func NewTraceTool() mcp.Tool {
 func NewAuditTool() mcp.Tool {
 	return mcp.NewTool(
 		ToolNameAudit,
-		mcp.WithDescription("Analyze semantic impact and code health of uncommitted git diffs. Audits cognitive complexity spikes, public API signature modifications, and missing docstrings. MUST be run before marking code implementation tasks as completed in SDD workflows."),
+		mcp.WithDescription("Analyze semantic impact and code health of uncommitted git diffs. Audits cyclomatic complexity delta, public API signature modifications, and missing docstrings. MUST be run before marking code implementation tasks as completed in SDD workflows."),
 		mcp.WithString("base",
 			mcp.Description("Git revision or branch to compare against (default: 'HEAD')"),
 		),
@@ -97,7 +97,7 @@ func NewAuditTool() mcp.Tool {
 			mcp.Description("Audit presence of docstrings on modified public functions (default: true)"),
 		),
 		mcp.WithInteger("max_complexity",
-			mcp.Description("Threshold for cognitive complexity statements per function before flagging warnings (default: 15)"),
+			mcp.Description("Threshold for cyclomatic complexity delta per file before flagging warnings (default: 15)"),
 		),
 	)
 }

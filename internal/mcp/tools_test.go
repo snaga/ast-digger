@@ -114,7 +114,7 @@ func TestCoreTools_SchemaDefinitions(t *testing.T) {
 		{
 			name: ToolNameAudit,
 			fullDescription: "Analyze semantic impact and code health of uncommitted git diffs. " +
-				"Audits cognitive complexity spikes, public API signature modifications, and missing docstrings. " +
+				"Audits cyclomatic complexity delta, public API signature modifications, and missing docstrings. " +
 				"MUST be run before marking code implementation tasks as completed in SDD workflows.",
 			expectedDescKeyword: "MUST be run before marking code implementation tasks as completed",
 			requiredFields:      nil,
@@ -129,7 +129,7 @@ func TestCoreTools_SchemaDefinitions(t *testing.T) {
 				},
 				"max_complexity": {
 					propType:    "integer",
-					description: "Threshold for cognitive complexity statements per function before flagging warnings (default: 15)",
+					description: "Threshold for cyclomatic complexity delta per file before flagging warnings (default: 15)",
 				},
 			},
 		},

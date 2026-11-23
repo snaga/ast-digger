@@ -22,6 +22,7 @@ ast-digger/                    # リポジトリルート
 │       └── truncate.go        # 出力切り詰め処理
 ├── internal/
 │   ├── mcp/                   # Model Context Protocol (MCP) サーバー・ツール統合
+│   │   ├── README.md          # MCP サーバー責務と L1 Intent 永続化
 │   │   ├── server.go          # MCP サーバー初期化・ツール登録・stdio ループ
 │   │   ├── tools.go           # 4大コアツールの JSON Schema 定義および負のアフォーダンス設計
 │   │   └── handlers.go        # 各ツールリクエストを既存パッケージへ委譲するハンドラ
@@ -34,6 +35,7 @@ ast-digger/                    # リポジトリルート
 │   ├── parser/                # 各言語用 AST 解析パーサー
 │   │   ├── base.go            # Parser インターフェース、SymbolData/ReferenceData 型定義
 │   │   ├── factory.go         # 拡張子に基づくパーサーインスタンス生成
+│   │   ├── languages.go       # Tree-sitter 文法インスタンス生成・キャッシュ・一元管理
 │   │   ├── python.go          # Python 解析用パーサー
 │   │   ├── typescript.go      # TypeScript 解析用パーサー
 │   │   ├── golang.go          # Go 解析用パーサー（予約語との混同を避けるため golang.go と命名）
